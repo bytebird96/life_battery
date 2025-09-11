@@ -1,0 +1,51 @@
+# ===== 공통 =====
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+*.tmp
+*.bak
+
+# ===== IDE =====
+*.iml
+*.ipr
+*.iws
+.idea/
+.vscode/         # 어차피 개인 개발 환경이라 공유할 필요 없음
+
+# ===== 빌드 산출물 =====
+/build/
+/coverage/
+/out/            # IntelliJ 빌드 산출물
+.gradle/
+/.mvn/
+.migrate_working_dir/
+
+# ===== Flutter/Dart/Pub =====
+.dart_tool/
+/.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub/
+/.pub-cache/
+/ios/Flutter/.last_build_id
+**/doc/api/
+
+# ===== Android =====
+/android/app/debug
+/android/app/profile
+/android/app/release
+.cxx/            # NDK 빌드 캐시
+
+# ===== 심볼/난독화 =====
+app.*.symbols
+app.*.map.json
+
+# ===== 기타 개인 작업 흔적 =====
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
