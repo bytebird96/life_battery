@@ -1,17 +1,19 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../data/repositories.dart';
 
 /// 배터리 퍼센트를 관리하는 컨트롤러
 /// - 실시간으로 퍼센트 값을 변경하기 위해 [Timer]를 사용
 class BatteryController extends StateNotifier<double> {
   Timer? _timer; // 주기적으로 배터리를 갱신하는 타이머
+
   BatteryController(double initial) : super(initial);
 
   /// 작업을 시작하여 일정 시간 동안 배터리를 증감
   /// [ratePerHour] 시간당 퍼센트 변화량(음수 가능)
   /// [duration] 작업 총 소요 시간
   void startTask({required double ratePerHour, required Duration duration}) {
-    _timer?.cancel();
+    stop(); // 기존 타이머가 있으면 정지
     var seconds = duration.inSeconds; // 남은 초
     final perSecond = ratePerHour / 3600; // 초당 퍼센트 변화량
 
@@ -23,14 +25,31 @@ class BatteryController extends StateNotifier<double> {
 
       seconds--;
       if (seconds <= 0) {
-        timer.cancel(); // 시간이 끝나면 타이머 종료
+        stop(); // 시간이 끝나면 타이머 종료
       }
     });
   }
 
+  /// 진행 중인 작업을 중지하고 타이머 해제
+  void stop() {
+    _timer?.cancel();
+    _timer = null;
+  }
+
+  /// 현재 작업이 실행 중인지 여부
+  bool get isRunning => _timer != null;
+
   @override
   void dispose() {
-    _timer?.cancel();
+    stop();
     super.dispose();
   }
 }
+
+/// 배터리 컨트롤러 프로바이더
+/// - 리포지토리의 초기 배터리를 사용하여 생성
+final batteryControllerProvider =
+    StateNotifierProvider<BatteryController, double>((ref) {
+  final repo = ref.read(repositoryProvider);
+  return BatteryController(repo.settings.initialBattery);
+});
