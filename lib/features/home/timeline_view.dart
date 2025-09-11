@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Interval;
 import '../../data/models.dart';
 import '../../core/time.dart';
 import '../../core/compute.dart'; // resolveIntervals 사용
