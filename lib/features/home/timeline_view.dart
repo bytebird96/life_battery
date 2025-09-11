@@ -1,25 +1,25 @@
 import 'package:flutter/material.dart';
-import '../../data/models.dart';
+import '../../data/models.dart' as m; // Interval과 타입 정의
 import '../../core/time.dart';
 import '../../core/compute.dart'; // resolveIntervals 사용
 
 /// 하루 타임라인 뷰
 class TimelineView extends StatelessWidget {
   final Map<DateTime, double> data; // 시뮬레이션 결과
-  final UserSettings settings; // 사용자 설정
-  final List<Event> events; // 오늘 이벤트 목록
+  final m.UserSettings settings; // 사용자 설정
+  final List<m.Event> events; // 오늘 이벤트 목록
   const TimelineView(
       {super.key, required this.data, required this.settings, required this.events});
 
-  Color colorFor(EventType? t) {
+  Color colorFor(m.EventType? t) {
     switch (t) {
-      case EventType.sleep:
+      case m.EventType.sleep:
         return Colors.blue;
-      case EventType.rest:
+      case m.EventType.rest:
         return Colors.green;
-      case EventType.work:
+      case m.EventType.work:
         return Colors.red;
-      case EventType.neutral:
+      case m.EventType.neutral:
       default:
         return Colors.grey;
     }
@@ -31,7 +31,7 @@ class TimelineView extends StatelessWidget {
     final end = start.add(const Duration(days: 1));
     final minutes = end.difference(start).inMinutes; // 하루 총 분수
     // 이벤트들을 우선순위 기준으로 구간 분해
-    final intervals = resolveIntervals(events);
+    final intervals = resolveIntervals(events); // 우선순위를 반영한 구간 목록
 
     return LayoutBuilder(builder: (context, constraints) {
       final widthPerMin = constraints.maxWidth / minutes;
@@ -45,7 +45,8 @@ class TimelineView extends StatelessWidget {
               // 해당 분에 적용되는 이벤트 찾기
               final interval = intervals.firstWhere(
                   (it) => !t.isBefore(it.start) && t.isBefore(it.end),
-                  orElse: () => Interval(start: t, end: t));
+                  // Flutter의 Interval과 이름이 겹쳐 모델의 Interval을 명시
+                  orElse: () => m.Interval(start: t, end: t));
               final color = colorFor(interval.top?.type);
               return Container(width: widthPerMin, color: color);
             }),
