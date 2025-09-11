@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/models.dart';
 import '../../data/repositories.dart';
+import '../../core/compute.dart'; // 우선순위 계산 함수 사용
 
 /// 이벤트 편집 화면
 class EditEventScreen extends ConsumerStatefulWidget {
@@ -13,11 +14,11 @@ class EditEventScreen extends ConsumerStatefulWidget {
 
 class _EditEventState extends ConsumerState<EditEventScreen> {
   final _formKey = GlobalKey<FormState>();
-  String title = '';
-  EventType type = EventType.work;
-  DateTime start = DateTime.now();
-  DateTime end = DateTime.now().add(const Duration(hours: 1));
-  double? rate;
+  String title = ''; // 이벤트 제목
+  EventType type = EventType.work; // 기본 이벤트 종류
+  DateTime start = DateTime.now(); // 시작 시각
+  DateTime end = DateTime.now().add(const Duration(hours: 1)); // 종료 시각
+  double? rate; // 사용자 지정 시간당 비율
 
   @override
   Widget build(BuildContext context) {
@@ -56,11 +57,12 @@ class _EditEventState extends ConsumerState<EditEventScreen> {
                       endAt: end,
                       type: type,
                       ratePerHour: rate,
+                      // 선택한 타입의 기본 우선순위 적용
                       priority: defaultPriority(type),
                       createdAt: DateTime.now(),
                       updatedAt: DateTime.now());
-                  repo.saveEvent(e);
-                  Navigator.pop(context);
+                  repo.saveEvent(e); // 저장
+                  Navigator.pop(context); // 이전 화면으로 돌아가기
                 },
                 child: const Text('저장'))
           ],

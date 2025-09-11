@@ -84,7 +84,8 @@ Map<DateTime, double> simulate(List<Event> events, UserSettings s,
     }
     result[t] = battery;
     battery += perMin;
-    final maxCap = s.overcapAllowed ? 150 : 100;
+    // 오버캡 허용 시 최대 150%, 아니면 100%로 제한
+    final double maxCap = s.overcapAllowed ? 150.0 : 100.0;
     if (battery > maxCap) battery = maxCap;
     if (battery < 0) battery = 0;
     t = t.add(const Duration(minutes: 1));

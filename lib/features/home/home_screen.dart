@@ -5,6 +5,7 @@ import '../../core/time.dart';
 import 'battery_gauge.dart';
 import 'timeline_view.dart';
 import '../../data/models.dart';
+import '../../core/compute.dart'; // defaultPriority 사용
 import 'dart:math';
 
 /// 홈 화면
@@ -47,6 +48,7 @@ class HomeScreen extends ConsumerWidget {
         onPressed: () {
           final start = alignMinute(DateTime.now());
           final end = start.add(const Duration(minutes: 30));
+          // 현재 시각 기준 30분짜리 작업 이벤트를 즉시 생성
           repo.saveEvent(Event(
               id: Random().nextInt(1 << 32).toString(),
               title: '빠른작업',
@@ -54,6 +56,7 @@ class HomeScreen extends ConsumerWidget {
               endAt: end,
               type: EventType.work,
               ratePerHour: null,
+              // 작업 타입의 기본 우선순위 사용
               priority: defaultPriority(EventType.work),
               createdAt: start,
               updatedAt: start));

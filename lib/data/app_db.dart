@@ -1,5 +1,5 @@
 import 'package:drift/drift.dart';
-import 'package:drift_flutter/drift_flutter.dart';
+import 'package:drift/native.dart'; // NativeDatabase 사용
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 
@@ -39,16 +39,20 @@ class Settings extends Table {
 
 @DriftDatabase(tables: [Events, Settings])
 class AppDb extends _$AppDb {
-  AppDb() : super(_open());
+  AppDb() : super(_open()); // 로컬 DB 연결 생성
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 1; // 스키마 버전 관리
 }
 
+/// 실제 DB 파일을 열어 NativeDatabase 인스턴스를 반환
 LazyDatabase _open() {
   return LazyDatabase(() async {
+    // 앱 전용 디렉토리 확보
     final dir = await getApplicationDocumentsDirectory();
+    // energy.sqlite 파일 경로 지정
     final file = File('${dir.path}/energy.sqlite');
+    // 백그라운드에서 데이터베이스 초기화
     return NativeDatabase.createInBackground(file);
   });
 }
