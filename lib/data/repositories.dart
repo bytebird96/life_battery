@@ -17,6 +17,8 @@ class AppRepository {
     _db = db.AppDb(); // 로컬 데이터베이스 초기화
     // 설정 존재 확인 후 없으면 기본값 삽입
     settings = UserSettings();
+    // 초기 실행 시 타임라인을 바로 확인할 수 있도록 더미 이벤트 삽입
+    await addDummy(DateTime.now());
   }
 
   /// 오늘 윈도우 이벤트 조회

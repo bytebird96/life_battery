@@ -16,8 +16,12 @@ class HomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final repo = ref.watch(repositoryProvider);
     final now = DateTime.now();
-    final data = repo.simulateDay(now);
-    final battery = data[now] ?? repo.settings.initialBattery;
+    final data = repo.simulateDay(now); // 오늘 배터리 변화 시뮬레이션
+    final battery = data[now] ?? repo.settings.initialBattery; // 현재 배터리 퍼센트
+    // 오늘 하루에 해당하는 이벤트 목록 구하기
+    final start = todayStart(now, repo.settings.dayStart);
+    final end = start.add(const Duration(days: 1));
+    final todayEvents = repo.eventsInRange(start, end);
     return Scaffold(
       appBar: AppBar(
         title: const Text('에너지 배터리'),
@@ -41,7 +45,12 @@ class HomeScreen extends ConsumerWidget {
           const SizedBox(height: 16),
           BatteryGauge(percent: battery / 100),
           const SizedBox(height: 16),
-          Expanded(child: TimelineView(data: data, settings: repo.settings)),
+          // 타임라인에 시뮬레이션 결과와 이벤트 리스트 전달
+          Expanded(
+              child: TimelineView(
+                  data: data,
+                  settings: repo.settings,
+                  events: todayEvents)),
         ],
       ),
       floatingActionButton: FloatingActionButton(
