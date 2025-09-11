@@ -3,20 +3,24 @@ import 'package:energy_battery/main.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:energy_battery/data/repositories.dart';
 
-/// 홈 화면 렌더 및 FAB 동작 테스트
+/// 홈 화면 렌더 및 수면 타이머 테스트
 void main() {
-  testWidgets('홈 렌더 및 FAB', (tester) async {
+  testWidgets('수면 시작 후 배터리 증가', (tester) async {
     final repo = AppRepository();
     await repo.init();
     await tester.pumpWidget(ProviderScope(overrides: [
       repositoryProvider.overrideWithValue(repo)
     ], child: const EnergyBatteryApp()));
-    expect(find.text('에너지 배터리'), findsOneWidget);
-    // init()에서 더미 이벤트 3개가 생성된 상태 확인
-    expect(repo.events.length, 3);
-    await tester.tap(find.byType(FloatingActionButton));
-    await tester.pumpAndSettle();
-    // 빠른 이벤트 생성으로 총 4개가 되어야 함
-    expect(repo.events.length, 4);
+
+    // 초기 배터리 80% 확인
+    expect(find.text('80.0%'), findsOneWidget);
+
+    // 첫 번째 시작 버튼(수면)을 탭
+    await tester.tap(find.widgetWithText(ElevatedButton, '시작').first);
+    await tester.pump();
+
+    // 1시간이 경과하도록 펌프 -> 10% 충전되어 90%가 되어야 함
+    await tester.pump(const Duration(hours: 1));
+    expect(find.text('90.0%'), findsOneWidget);
   });
 }

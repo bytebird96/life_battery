@@ -1,77 +1,67 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/repositories.dart';
-import '../../core/time.dart';
 import 'battery_gauge.dart';
-import 'timeline_view.dart';
-import '../../data/models.dart';
-import '../../core/compute.dart'; // defaultPriority 사용
-import 'dart:math';
+import 'battery_controller.dart';
+
+/// 배터리 상태를 제공하는 프로바이더
+final batteryProvider = StateNotifierProvider<BatteryController, double>((ref) {
+  // 리포지토리에서 초기 배터리 값을 가져와 컨트롤러 생성
+  final repo = ref.watch(repositoryProvider);
+  return BatteryController(repo.settings.initialBattery);
+});
 
 /// 홈 화면
+/// - 수면/업무 일정을 목록으로 보여주고, 시작 버튼으로 타이머를 실행
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final repo = ref.watch(repositoryProvider);
-    final now = DateTime.now();
-    final data = repo.simulateDay(now); // 오늘 배터리 변화 시뮬레이션
-    final battery = data[now] ?? repo.settings.initialBattery; // 현재 배터리 퍼센트
-    // 오늘 하루에 해당하는 이벤트 목록 구하기
-    final start = todayStart(now, repo.settings.dayStart);
-    final end = start.add(const Duration(days: 1));
-    final todayEvents = repo.eventsInRange(start, end);
+    final battery = ref.watch(batteryProvider); // 현재 배터리 퍼센트
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('에너지 배터리'),
-        actions: [
-          IconButton(
-              onPressed: () => Navigator.pushNamed(context, '/report'),
-              icon: const Icon(Icons.assessment)),
-          IconButton(
-              onPressed: () => Navigator.pushNamed(context, '/settings'),
-              icon: const Icon(Icons.settings)),
-          IconButton(
-              onPressed: () async {
-                await repo.addDummy(now);
-                (context as Element).markNeedsBuild();
-              },
-              icon: const Icon(Icons.bolt))
-        ],
-      ),
+      appBar: AppBar(title: const Text('에너지 배터리')),
       body: Column(
         children: [
           const SizedBox(height: 16),
+          // 현재 배터리 상태 표시
           BatteryGauge(percent: battery / 100),
           const SizedBox(height: 16),
-          // 타임라인에 시뮬레이션 결과와 이벤트 리스트 전달
+          // 일정 목록
           Expanded(
-              child: TimelineView(
-                  data: data,
-                  settings: repo.settings,
-                  events: todayEvents)),
+            child: ListView(
+              children: [
+                ListTile(
+                  title: const Text('수면 7시간 (시간 당 10%)'),
+                  subtitle: const Text('충전 70%'),
+                  trailing: ElevatedButton(
+                    onPressed: () {
+                      // 수면 시작: 7시간 동안 시간당 10% 충전
+                      ref
+                          .read(batteryProvider.notifier)
+                          .startTask(ratePerHour: 10, duration: const Duration(hours: 7));
+                    },
+                    child: const Text('시작'),
+                  ),
+                ),
+                ListTile(
+                  title: const Text('업무 8시간 (시간당 5%)'),
+                  subtitle: const Text('배터리 소모 예상 40%'),
+                  trailing: ElevatedButton(
+                    onPressed: () {
+                      // 업무 시작: 8시간 동안 시간당 -5% 소모
+                      ref
+                          .read(batteryProvider.notifier)
+                          .startTask(ratePerHour: -5, duration: const Duration(hours: 8));
+                    },
+                    child: const Text('시작'),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          final start = alignMinute(DateTime.now());
-          final end = start.add(const Duration(minutes: 30));
-          // 현재 시각 기준 30분짜리 작업 이벤트를 즉시 생성
-          repo.saveEvent(Event(
-              id: Random().nextInt(1 << 32).toString(),
-              title: '빠른작업',
-              startAt: start,
-              endAt: end,
-              type: EventType.work,
-              ratePerHour: null,
-              // 작업 타입의 기본 우선순위 사용
-              priority: defaultPriority(EventType.work),
-              createdAt: start,
-              updatedAt: start));
-          (context as Element).markNeedsBuild();
-        },
-        child: const Icon(Icons.add),
       ),
     );
   }
