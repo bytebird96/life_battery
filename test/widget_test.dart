@@ -12,9 +12,11 @@ void main() {
       repositoryProvider.overrideWithValue(repo)
     ], child: const EnergyBatteryApp()));
     expect(find.text('에너지 배터리'), findsOneWidget);
-    expect(repo.events.length, 0);
+    // init()에서 더미 이벤트 3개가 생성된 상태 확인
+    expect(repo.events.length, 3);
     await tester.tap(find.byType(FloatingActionButton));
     await tester.pumpAndSettle();
-    expect(repo.events.length, 1);
+    // 빠른 이벤트 생성으로 총 4개가 되어야 함
+    expect(repo.events.length, 4);
   });
 }
