@@ -15,8 +15,26 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   Timer? _countdown; // 남은 시간을 표시하는 타이머
-  Duration _remain = Duration.zero; // 남은 시간
+  Duration _remain = Duration.zero; // 현재 실행 중인 작업의 남은 시간
   String? _task; // 현재 진행 중인 작업 식별자
+
+  /// 각 작업별 기본 지속 시간
+  /// - 사용자가 중지했다가 다시 시작할 때 남은 시간을 기억하기 위해 사용
+  final Map<String, Duration> _baseDurations = {
+    'sleep': const Duration(hours: 7),
+    'work': const Duration(hours: 8),
+  };
+
+  /// 작업별로 남아 있는 시간 저장소
+  /// - 처음에는 기본 지속 시간으로 채워짐
+  late Map<String, Duration> _remainMap;
+
+  @override
+  void initState() {
+    super.initState();
+    // 모든 작업의 남은 시간을 기본값으로 초기화
+    _remainMap = Map.from(_baseDurations);
+  }
 
   /// 남은 시간을 HH:mm 형식으로 표시
   String _format(Duration d) {
@@ -26,11 +44,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   /// 작업 시작 공통 처리
-  void _startTask(String id, double rate, Duration duration) {
+  /// [id] 작업 식별자, [rate] 시간당 증감 퍼센트
+  /// - 기존에 중지한 적이 있다면 그때의 남은 시간부터 다시 시작
+  void _startTask(String id, double rate) {
+    // 직전에 저장된 남은 시간이 0이면 처음부터 시작
+    var duration = _remainMap[id] ?? _baseDurations[id]!;
+    if (duration == Duration.zero) duration = _baseDurations[id]!;
+
     // 배터리 타이머 시작
     ref
         .read(batteryControllerProvider.notifier)
         .startTask(ratePerHour: rate, duration: duration);
+
     // 카운트다운 타이머 시작
     _countdown?.cancel();
     setState(() {
@@ -53,8 +78,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     ref.read(batteryControllerProvider.notifier).stop();
     _countdown?.cancel();
     setState(() {
+      // 현재 작업이 있다면 남은 시간을 저장해 재시작에 활용
+      if (_task != null) {
+        _remainMap[_task!] = _remain;
+      }
       _task = null;
-      _remain = Duration.zero;
     });
   }
 
@@ -97,7 +125,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       if (_task == 'sleep') {
                         _stopTask();
                       } else {
-                        _startTask('sleep', 10, const Duration(hours: 7));
+                        // 저장된 남은 시간부터 다시 시작
+                        _startTask('sleep', 10);
                       }
                     },
                     child: Text(_task == 'sleep' ? '중지' : '시작'),
@@ -120,7 +149,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       if (_task == 'work') {
                         _stopTask();
                       } else {
-                        _startTask('work', -5, const Duration(hours: 8));
+                        // 저장된 남은 시간부터 다시 시작
+                        _startTask('work', -5);
                       }
                     },
                     child: Text(_task == 'work' ? '중지' : '시작'),
