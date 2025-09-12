@@ -68,16 +68,19 @@ class AppRepository {
       'INSERT OR REPLACE INTO events '
       '(id, title, start_at, end_at, type, rate_per_hour, priority, created_at, updated_at) '
       'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      variables: [
-        dr.Variable<String>(e.id),
-        dr.Variable<String>(e.title),
-        dr.Variable<int>(e.startAt.millisecondsSinceEpoch),
-        dr.Variable<int>(e.endAt.millisecondsSinceEpoch),
-        dr.Variable<int>(e.type.index),
-        dr.Variable<double?>(e.ratePerHour),
-        dr.Variable<int>(e.priority),
-        dr.Variable<int>(e.createdAt.millisecondsSinceEpoch),
-        dr.Variable<int>(e.updatedAt.millisecondsSinceEpoch),
+      // List<Variable<Object?>>로 명시하여 null 가능 타입을 함께 다룬다.
+      // 그렇지 않으면 double? 타입이 들어갈 때 컴파일 오류가 발생한다.
+      variables: <dr.Variable<Object?>>[
+        dr.Variable<String>(e.id), // 문자열 ID
+        dr.Variable<String>(e.title), // 일정 제목
+        dr.Variable<int>(e.startAt.millisecondsSinceEpoch), // 시작 시각(ms)
+        dr.Variable<int>(e.endAt.millisecondsSinceEpoch), // 종료 시각(ms)
+        dr.Variable<int>(e.type.index), // 이벤트 유형(enum 인덱스)
+        dr.Variable<double?>(
+            e.ratePerHour), // 시간당 회복량은 null 가능하므로 double?
+        dr.Variable<int>(e.priority), // 우선순위
+        dr.Variable<int>(e.createdAt.millisecondsSinceEpoch), // 생성 시각(ms)
+        dr.Variable<int>(e.updatedAt.millisecondsSinceEpoch), // 수정 시각(ms)
       ],
     );
   }
