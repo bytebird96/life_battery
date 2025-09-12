@@ -19,7 +19,7 @@ class _EditEventState extends ConsumerState<EditEventScreen> {
   String _title = ''; // 일정 제목 저장 변수
   String _content = ''; // 일정 설명 저장 변수
   int _minutes = 0; // 소요 시간(분)
-  double _battery = 0; // 전체 배터리 변화 퍼센트
+  double _battery = 0.0; // 전체 배터리 변화 퍼센트 (초기값 0.0)
 
   @override
   Widget build(BuildContext context) {
@@ -51,7 +51,8 @@ class _EditEventState extends ConsumerState<EditEventScreen> {
             TextFormField(
               decoration: const InputDecoration(labelText: '배터리 변화(%)'),
               keyboardType: TextInputType.number,
-              onChanged: (v) => _battery = double.tryParse(v) ?? 0,
+              onChanged: (v) =>
+                  _battery = double.tryParse(v) ?? 0.0, // 숫자 변환 실패 시 0.0으로 처리
             ),
             const SizedBox(height: 20),
             // 저장 버튼
@@ -59,8 +60,9 @@ class _EditEventState extends ConsumerState<EditEventScreen> {
               onPressed: () {
                 final start = DateTime.now(); // 시작 시각은 현재로 설정
                 final end = start.add(Duration(minutes: _minutes)); // 종료 시각 계산
-                final rate =
-                    _minutes > 0 ? _battery / (_minutes / 60) : 0; // 시간당 변화율 계산
+                final double rate = _minutes > 0
+                    ? _battery / (_minutes / 60)
+                    : 0.0; // 0.0을 사용해 double 타입 유지
                 // 이벤트 생성
                 final e = Event(
                   id: DateTime.now().microsecondsSinceEpoch.toString(),
