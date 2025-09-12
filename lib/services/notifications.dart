@@ -39,7 +39,9 @@ class NotificationService {
     await _plugin
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>()
-        ?.requestPermission();
+        // 플러그인 17 버전 이상에서는 메서드명이 requestNotificationsPermission으로 변경됨
+        // 알림 권한을 요청하여 사용자에게 허용 여부를 묻는다
+        ?.requestNotificationsPermission();
 
     // iOS와 macOS에서도 알림, 뱃지, 소리 권한을 각각 요청해야 함
     await _plugin
@@ -89,8 +91,8 @@ class NotificationService {
       details,
       uiLocalNotificationDateInterpretation:
           UILocalNotificationDateInterpretation.absoluteTime,
+      // 대기 모드에서도 정확한 시간에 알림을 울리도록 설정
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      androidAllowWhileIdle: true,
     );
   }
 
