@@ -7,6 +7,7 @@ import 'battery_gauge.dart';
 import 'battery_controller.dart';
 import '../../data/repositories.dart';
 import '../../data/models.dart'; // Event 모델 사용을 위해 추가
+import '../../services/notifications.dart'; // 알림 서비스
 import '../event/edit_event_screen.dart'; // 일정 수정 화면
 
 /// 홈 화면
@@ -165,11 +166,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     Future.microtask(_loadState);
   }
 
-  /// Duration을 "HH:mm" 형식의 문자열로 변환
+  /// Duration을 "HH:mm:ss" 형식의 문자열로 변환
   String _format(Duration d) {
     final h = d.inHours.toString().padLeft(2, '0');
     final m = (d.inMinutes % 60).toString().padLeft(2, '0');
-    return '$h:$m';
+    final s = (d.inSeconds % 60).toString().padLeft(2, '0');
+    return '$h:$m:$s';
   }
 
   /// 일정 시작 처리
@@ -189,9 +191,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
 
     // 배터리 컨트롤러에 작업 시작 요청
+    // 배터리 컨트롤러에 작업 시작 요청
     ref
         .read(batteryControllerProvider.notifier)
         .startTask(ratePerHour: e.ratePerHour ?? 0, duration: duration);
+
+    // 기존에 예약된 알림이 있다면 취소 후 새로 예약
+    final notif = ref.read(notificationProvider);
+    await notif.cancel(e.id.hashCode);
+    await notif.scheduleComplete(
+      id: e.id.hashCode,
+      title: '일정 완료',
+      body: '${e.title}이(가) 완료되었습니다',
+      after: duration,
+    );
 
     // 시작한 작업 정보를 로컬 저장소에 기록
     _remainMap[e.id] = duration;
@@ -206,7 +219,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     });
     _countdown = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (_remain.inSeconds <= 1) {
-        _stopEvent(); // 시간이 끝나면 작업 종료
+        _stopEvent(completed: true); // 시간이 끝나면 작업 종료
       } else {
         setState(() {
           _remain -= const Duration(seconds: 1);
@@ -216,9 +229,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   /// 일정 중지 처리
-  Future<void> _stopEvent() async {
+  /// - [completed] true이면 정상 완료, false이면 사용자가 중지
+  Future<void> _stopEvent({bool completed = false}) async {
     ref.read(batteryControllerProvider.notifier).stop();
     _countdown?.cancel();
+
+    // 사용자가 중지한 경우 예약된 알림 취소
+    if (!completed && _taskId != null) {
+      await ref.read(notificationProvider).cancel(_taskId!.hashCode);
+    }
+
     setState(() {
       if (_taskId != null) {
         // 중지 시점의 남은 시간을 저장해 다음 시작에 활용
@@ -251,7 +271,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('생활 배터리')),
+      appBar: AppBar(title: const Text('에너지 배터리')),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
           // 일정 추가 화면으로 이동 후 돌아오면 목록 갱신
@@ -307,7 +327,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       children: [
                         if (e.content != null && e.content!.isNotEmpty)
                           Text(e.content!), // 일정 상세 내용
-                        Text('소요 시간: ${base.inMinutes}분'),
+                        Text('소요 시간: ${_format(base)}'),
                         Text('배터리 변화: ${total.toStringAsFixed(1)}%'),
                         if (running)
                           Text(

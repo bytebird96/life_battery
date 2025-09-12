@@ -1,5 +1,7 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:timezone/data/latest.dart' as tz; // 타임존 데이터 로드
+import 'package:timezone/timezone.dart' as tz; // 일정 시간 계산에 사용
 
 /// 로컬 알림을 처리하는 서비스
 class NotificationService {
@@ -21,6 +23,8 @@ class NotificationService {
       iOS: darwin,
       macOS: darwin,
     );
+    // 타임존 정보를 초기화하여 정확한 예약 알림 시간을 계산
+    tz.initializeTimeZones();
     // 플러그인 실제 초기화 수행
     await _plugin.initialize(init);
   }
@@ -37,6 +41,43 @@ class NotificationService {
     );
     // 실제 알림 표시
     await _plugin.show(0, '배터리 부족', '작업 시작 전에 충전 필요', details);
+  }
+
+  /// 일정 완료 시점에 맞춰 알림을 예약
+  /// - [id]        알림 식별자 (일정 ID의 hashCode 사용)
+  /// - [title]     알림 제목
+  /// - [body]      알림 본문
+  /// - [after]     얼마나 뒤에 알림을 표시할지
+  Future<void> scheduleComplete({
+    required int id,
+    required String title,
+    required String body,
+    required Duration after,
+  }) async {
+    final scheduled = tz.TZDateTime.now(tz.local).add(after); // 현재 시각 기준 예약
+    const android = AndroidNotificationDetails('done', '일정 완료');
+    const darwin = DarwinNotificationDetails();
+    const details = NotificationDetails(
+      android: android,
+      iOS: darwin,
+      macOS: darwin,
+    );
+    await _plugin.zonedSchedule(
+      id,
+      title,
+      body,
+      scheduled,
+      details,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      androidAllowWhileIdle: true,
+    );
+  }
+
+  /// 예약된 알림 취소
+  Future<void> cancel(int id) async {
+    await _plugin.cancel(id);
   }
 }
 
