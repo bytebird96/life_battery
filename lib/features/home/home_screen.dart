@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'battery_gauge.dart';
 import 'battery_controller.dart';
 import '../../data/repositories.dart';
+import '../../data/models.dart'; // Event 모델 사용을 위해 추가
 
 /// 홈 화면
 /// - 등록된 일정 목록을 보여주고 스와이프로 삭제 가능
