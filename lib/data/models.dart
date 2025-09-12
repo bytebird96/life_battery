@@ -43,7 +43,7 @@ class UserSettings {
   bool overcapAllowed;
 
   UserSettings({
-    this.initialBattery = 80,
+    this.initialBattery = 70, // 디자인과 동일하게 기본 배터리를 70%로 설정
     this.defaultDrainRate = 5,
     this.defaultRestRate = 3,
     this.sleepFullCharge = true,

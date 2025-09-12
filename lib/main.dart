@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'data/repositories.dart';
-import 'features/home/home_screen.dart';
+import 'features/home/life_battery_home_screen.dart';
 import 'features/event/edit_event_screen.dart';
 import 'features/settings/settings_screen.dart';
 import 'features/report/report_screen.dart';
@@ -32,7 +32,7 @@ class EnergyBatteryApp extends StatelessWidget {
       theme: ThemeData(useMaterial3: true),
       initialRoute: '/',
       routes: {
-        '/': (_) => const HomeScreen(),
+        '/': (_) => const LifeBatteryHomeScreen(),
         '/event': (_) => const EditEventScreen(),
         '/settings': (_) => const SettingsScreen(),
         '/report': (_) => const ReportScreen(),
