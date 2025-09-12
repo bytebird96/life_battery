@@ -7,6 +7,7 @@ import 'battery_gauge.dart';
 import 'battery_controller.dart';
 import '../../data/repositories.dart';
 import '../../data/models.dart'; // Event 모델 사용을 위해 추가
+import '../event/edit_event_screen.dart'; // 일정 수정 화면
 
 /// 홈 화면
 /// - 등록된 일정 목록을 보여주고 스와이프로 삭제 가능
@@ -315,15 +316,42 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           ), // 실행 중이면 남은 시간 표시
                       ],
                     ),
-                    trailing: ElevatedButton(
-                      onPressed: () async {
-                        if (running) {
-                          await _stopEvent();
-                        } else {
-                          await _startEvent(e);
-                        }
-                      },
-                      child: Text(running ? '중지' : '시작'),
+                    // 시작/중지 버튼과 수정 버튼을 나란히 배치
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // 수정 버튼
+                        IconButton(
+                          icon: const Icon(Icons.edit),
+                          onPressed: () async {
+                            // 수정 화면으로 이동 후 돌아오면 목록 갱신
+                            await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => EditEventScreen(event: e),
+                              ),
+                            );
+                            // 수정된 일정의 기본 시간으로 남은 시간을 재설정
+                            setState(() {
+                              final updated = repo.events
+                                  .firstWhere((ev) => ev.id == e.id);
+                              _remainMap[e.id] =
+                                  updated.endAt.difference(updated.startAt);
+                            });
+                            await _saveRemainMap(); // 변경 사항 저장
+                          },
+                        ),
+                        ElevatedButton(
+                          onPressed: () async {
+                            if (running) {
+                              await _stopEvent();
+                            } else {
+                              await _startEvent(e);
+                            }
+                          },
+                          child: Text(running ? '중지' : '시작'),
+                        ),
+                      ],
                     ),
                   ),
                 );
