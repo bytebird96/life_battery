@@ -96,27 +96,35 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     // 3) 실행 중이던 작업이 있는지 확인
     final runningId = prefs.getString('taskId');
     if (runningId != null) {
-      final rate = prefs.getDouble('ratePerHour') ?? 0;
-      final durationSec = prefs.getInt('duration') ?? 0;
-      final startMillis = prefs.getInt('startTime') ?? 0;
+      final rate = prefs.getDouble('ratePerHour') ?? 0; // 시간당 배터리 변화율
+      final durationSec = prefs.getInt('duration') ?? 0; // 전체 혹은 남은 시간(초)
+      final startMillis = prefs.getInt('startTime') ?? 0; // 작업이 시작된 시각(ms)
 
+      // 현재 시각과 시작 시각의 차이를 초 단위로 계산
       final elapsedSec =
           DateTime.now().millisecondsSinceEpoch ~/ 1000 - startMillis ~/ 1000;
+
+      // 실제로 소모된 시간은 전체 duration을 넘지 않도록 제한
       final usedSec = elapsedSec > durationSec ? durationSec : elapsedSec;
 
-      // 경과 시간만큼 배터리 퍼센트 계산
-      final perSecond = rate / 3600;
-      var battery = ref.read(batteryControllerProvider);
-      battery += perSecond * usedSec;
-      if (battery > 100) battery = 100;
-      if (battery < 0) battery = 0;
+      // -------- 배터리 보정 로직 --------
+      // 강제 종료 동안 경과한 시간을 반영하여 배터리 값을 보정한다.
+      final perSecond = rate / 3600; // 초당 배터리 변화량
+      var battery = ref.read(batteryControllerProvider); // 현재 배터리 값
+      battery += perSecond * usedSec; // 경과 시간만큼 변화 적용
+      if (battery > 100) battery = 100; // 최대 100%
+      if (battery < 0) battery = 0; // 최소 0%
+      // 계산된 배터리 값을 상태에 반영
       ref.read(batteryControllerProvider.notifier).state = battery;
+      // 혹시 남아 있을지 모를 타이머를 정지하여
+      // 일정이 끝난 뒤에도 배터리가 계속 변하는 문제를 차단한다.
+      ref.read(batteryControllerProvider.notifier).stop();
 
-      final remainSec = durationSec - usedSec;
+      final remainSec = durationSec - usedSec; // 남은 수행 시간(초)
       if (remainSec > 0) {
-        // 작업이 아직 남아 있으면 이어서 실행
+        // 작업이 아직 남아 있다면 남은 시간을 기록하고 이어서 실행
         _remainMap[runningId] = Duration(seconds: remainSec);
-        await _clearRunningTask(); // 기존 정보 삭제 후 새로 저장 준비
+        await _clearRunningTask(); // 기존 저장 정보 제거
 
         // 실제 일정 데이터를 찾아 재시작
         final repo = ref.read(repositoryProvider);
@@ -124,18 +132,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           final e = repo.events.firstWhere((ev) => ev.id == runningId);
           await _startEvent(e); // 남은 시간을 이용해 재시작
         } catch (_) {
-          // 일정이 삭제되었으면 정보만 초기화
+          // 일정이 삭제되었으면 남은 시간 정보만 초기화
           _remainMap.remove(runningId);
           await _saveRemainMap();
         }
       } else {
-        // 이미 종료된 경우 남은 시간을 0으로 표시하고 정보 삭제
+        // 이미 종료된 경우: 남은 시간을 0으로 저장하고 모든 실행 정보 제거
         _remainMap[runningId] = Duration.zero;
         await _clearRunningTask();
         await _saveRemainMap();
       }
     } else {
-      // 실행 중인 작업이 없다면 저장된 남은 시간만 적용
+      // 실행 중인 작업이 없다면 저장된 남은 시간만 적용하면 된다.
       await _saveRemainMap();
     }
 
@@ -172,6 +180,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       duration = e.endAt.difference(e.startAt);
     }
 
+    // 남은 시간이 0 이하라면 실행할 필요가 없으므로 바로 종료
+    if (duration <= Duration.zero) {
+      _remainMap[e.id] = Duration.zero; // 남은 시간을 0으로 명시
+      await _saveRemainMap();
+      return;
+    }
+
     // 배터리 컨트롤러에 작업 시작 요청
     ref
         .read(batteryControllerProvider.notifier)
@@ -206,7 +221,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     setState(() {
       if (_taskId != null) {
         // 중지 시점의 남은 시간을 저장해 다음 시작에 활용
-        _remainMap[_taskId!] = _remain;
+        // 1초 이하로 남아있다면 0으로 처리하여 완료 상태로 만든다.
+        _remainMap[_taskId!] =
+            _remain.inSeconds <= 1 ? Duration.zero : _remain;
       }
       _taskId = null;
     });
