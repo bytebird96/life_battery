@@ -251,7 +251,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('에너지 배터리')),
+      appBar: AppBar(title: const Text('생활 배터리')),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
           // 일정 추가 화면으로 이동 후 돌아오면 목록 갱신
