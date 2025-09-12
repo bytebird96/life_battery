@@ -2,7 +2,6 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../data/repositories.dart'; // 일정 목록을 가져오기 위해 리포지토리 참조
 import 'battery_controller.dart';
 import 'widgets/life_tab_bar.dart'; // 하단 탭바 위젯
 
@@ -129,38 +128,148 @@ class _CircularBattery extends StatelessWidget {
 
 /// 일정 목록을 보여주는 위젯
 ///
-/// 리포지토리에 저장된 이벤트 리스트를 불러와
-/// 초보자도 이해하기 쉽도록 제목과 시간을 단순 텍스트로 표시한다.
-class _TaskList extends ConsumerWidget {
+/// 실제 데이터베이스 연동 대신 디자인 확인용 더미 데이터를 사용한다.
+/// 한 항목은 "업무"라는 제목과 두 개의 태그, 그리고 진행 시간으로 구성된다.
+class _TaskList extends StatelessWidget {
   const _TaskList();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // 리포지토리에서 현재 저장된 일정 목록을 조회
-    final events = ref.watch(repositoryProvider).events;
-
-    // 일정이 하나도 없다면 안내 문구 출력
-    if (events.isEmpty) {
-      return const Center(child: Text('등록된 일정이 없습니다.'));
-    }
+  Widget build(BuildContext context) {
+    // 화면에 보여줄 더미 테스크 목록. 추후 실제 데이터와 교체하면 된다.
+    final tasks = [
+      _Task(
+        title: '업무',
+        category: 'Work',
+        project: 'Rasion Project',
+        duration: '00:42:21',
+      ),
+    ];
 
     return ListView.separated(
-      itemCount: events.length,
-      itemBuilder: (context, index) {
-        final e = events[index];
-        // 시작/종료 시각을 "HH:mm" 형식의 문자열로 변환
-        final start =
-            '${e.startAt.hour.toString().padLeft(2, '0')}:${e.startAt.minute.toString().padLeft(2, '0')}';
-        final end =
-            '${e.endAt.hour.toString().padLeft(2, '0')}:${e.endAt.minute.toString().padLeft(2, '0')}';
+      itemCount: tasks.length,
+      itemBuilder: (context, index) => _TaskTile(task: tasks[index]),
+      separatorBuilder: (_, __) => const SizedBox(height: 12),
+    );
+  }
+}
 
-        return ListTile(
-          title: Text(e.title),
-          subtitle: Text('$start - $end'),
-        );
-      },
-      // 각 항목 사이를 구분하기 위한 가는 선
-      separatorBuilder: (_, __) => const Divider(height: 1),
+/// 하나의 테스크 정보를 담는 간단한 모델
+class _Task {
+  final String title; // 테스크 제목 (예: 업무)
+  final String category; // 분류 태그 (예: Work)
+  final String project; // 프로젝트 태그 (예: Rasion Project)
+  final String duration; // 진행 시간 문자열
+
+  _Task({
+    required this.title,
+    required this.category,
+    required this.project,
+    required this.duration,
+  });
+}
+
+/// 디자인 시안과 동일한 형태로 테스크를 보여주는 위젯
+class _TaskTile extends StatelessWidget {
+  final _Task task;
+
+  const _TaskTile({required this.task});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7F7FA), // 연한 회색 배경
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          // 1) 왼쪽 모서리의 보라색 원과 모니터 아이콘
+          Container(
+            width: 40,
+            height: 40,
+            decoration: const BoxDecoration(
+              color: Color(0xFF9B51E0),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.computer, color: Colors.white),
+          ),
+          const SizedBox(width: 12),
+          // 2) 제목과 태그들
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        task.title,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w500,
+                          color: Colors.black,
+                        ),
+                      ),
+                    ),
+                    // 우측 상단에 진행 시간 표시
+                    Text(
+                      task.duration,
+                      style: const TextStyle(color: Colors.black54),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    _TagChip(
+                      text: task.category,
+                      color: const Color(0xFFFFE8EC), // 연한 분홍색 배경
+                      textColor: const Color(0xFFF35D6A), // 분홍 글씨
+                    ),
+                    const SizedBox(width: 4),
+                    _TagChip(
+                      text: task.project,
+                      color: const Color(0xFFF5F0FF), // 연한 보라색 배경
+                      textColor: const Color(0xFF9B51E0), // 보라 글씨
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          // 3) 오른쪽 끝의 재생 아이콘
+          const Icon(Icons.play_arrow, color: Colors.black26),
+        ],
+      ),
+    );
+  }
+}
+
+/// 태그 표시를 위한 작은 말풍선 모양 위젯
+class _TagChip extends StatelessWidget {
+  final String text; // 태그에 표시할 문자열
+  final Color color; // 배경색
+  final Color textColor; // 글자색
+
+  const _TagChip({
+    required this.text,
+    required this.color,
+    required this.textColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(color: textColor, fontSize: 12),
+      ),
     );
   }
 }
