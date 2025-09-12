@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:drift/drift.dart' as dr; // SQL 실행을 위한 Drift 유틸
+import 'package:shared_preferences/shared_preferences.dart'; // 로컬 저장소 접근
 import '../core/time.dart';
 import '../core/compute.dart';
 import 'models.dart';
@@ -16,6 +17,15 @@ class AppRepository {
 
   Future<void> init() async {
     _db = db.AppDb(); // 로컬 데이터베이스 초기화
+
+    // ------------------------------
+    // 앱 재시작 시 마지막 배터리 퍼센트를 복원하기 위해
+    // SharedPreferences에서 저장된 값을 읽어온다.
+    // 값이 없으면 기본값(설정값)을 그대로 사용한다.
+    // ------------------------------
+    final prefs = await SharedPreferences.getInstance();
+    settings.initialBattery =
+        prefs.getDouble('battery') ?? settings.initialBattery;
 
     // DB에 저장된 이벤트 목록을 모두 불러온다.
     final result = await _db.customSelect('SELECT * FROM events').get();

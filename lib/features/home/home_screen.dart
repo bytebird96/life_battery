@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert'; // 맵을 JSON 문자열로 변환하기 위해 사용
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // 간단한 로컬 저장소
 import 'battery_gauge.dart';
 import 'battery_controller.dart';
 import '../../data/repositories.dart';
@@ -23,6 +25,124 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   // 각 일정별로 남은 시간을 저장하는 맵
   final Map<String, Duration> _remainMap = {};
 
+  /// ----------------------------------------------
+  /// 로컬 저장소에 남은 시간 정보를 저장하는 유틸리티
+  /// - _remainMap에 저장된 Duration을 초 단위 정수로 변환해
+  ///   JSON 문자열 형태로 보관한다.
+  /// ----------------------------------------------
+  Future<void> _saveRemainMap() async {
+    final prefs = await SharedPreferences.getInstance();
+    final map = _remainMap.map((key, value) => MapEntry(key, value.inSeconds));
+    await prefs.setString('remainMap', jsonEncode(map));
+  }
+
+  /// ----------------------------------------------
+  /// 실행 중인 작업 정보를 저장한다.
+  /// - [id]        현재 실행 중인 일정 ID
+  /// - [rate]      시간당 배터리 변화율
+  /// - [duration]  전체 혹은 남은 수행 시간
+  /// ----------------------------------------------
+  Future<void> _saveRunningTask(
+      {required String id,
+      required double rate,
+      required Duration duration}) async {
+    final prefs = await SharedPreferences.getInstance();
+    final battery = ref.read(batteryControllerProvider); // 현재 배터리 퍼센트
+
+    await prefs.setDouble('battery', battery); // 현재 배터리 저장
+    await prefs.setString('taskId', id);
+    await prefs.setDouble('ratePerHour', rate);
+    await prefs.setInt('duration', duration.inSeconds);
+    await prefs.setInt('startTime', DateTime.now().millisecondsSinceEpoch);
+
+    await _saveRemainMap(); // 남은 시간 정보도 함께 저장
+  }
+
+  /// ----------------------------------------------
+  /// 실행 중인 작업 정보를 모두 제거한다.
+  /// - 작업이 정상 종료되었거나 앱이 다시 시작될 때 호출
+  /// ----------------------------------------------
+  Future<void> _clearRunningTask() async {
+    final prefs = await SharedPreferences.getInstance();
+    final battery = ref.read(batteryControllerProvider);
+    await prefs.setDouble('battery', battery); // 마지막 배터리 퍼센트 저장
+    await prefs.remove('taskId');
+    await prefs.remove('ratePerHour');
+    await prefs.remove('duration');
+    await prefs.remove('startTime');
+  }
+
+  /// ----------------------------------------------
+  /// 앱 시작 시 저장된 배터리 및 일정 진행 상태를 복원한다.
+  /// ----------------------------------------------
+  Future<void> _loadState() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    // 1) 이전에 저장된 남은 시간 맵 복원
+    final remainStr = prefs.getString('remainMap');
+    if (remainStr != null) {
+      final decoded = Map<String, dynamic>.from(jsonDecode(remainStr));
+      decoded.forEach((key, value) {
+        _remainMap[key] = Duration(seconds: value as int);
+      });
+    }
+
+    // 2) 저장된 배터리 퍼센트 복원
+    final savedBattery = prefs.getDouble('battery');
+    if (savedBattery != null) {
+      ref.read(batteryControllerProvider.notifier).state = savedBattery;
+    }
+
+    // 3) 실행 중이던 작업이 있는지 확인
+    final runningId = prefs.getString('taskId');
+    if (runningId != null) {
+      final rate = prefs.getDouble('ratePerHour') ?? 0;
+      final durationSec = prefs.getInt('duration') ?? 0;
+      final startMillis = prefs.getInt('startTime') ?? 0;
+
+      final elapsedSec =
+          DateTime.now().millisecondsSinceEpoch ~/ 1000 - startMillis ~/ 1000;
+      final usedSec = elapsedSec > durationSec ? durationSec : elapsedSec;
+
+      // 경과 시간만큼 배터리 퍼센트 계산
+      final perSecond = rate / 3600;
+      var battery = ref.read(batteryControllerProvider);
+      battery += perSecond * usedSec;
+      if (battery > 100) battery = 100;
+      if (battery < 0) battery = 0;
+      ref.read(batteryControllerProvider.notifier).state = battery;
+
+      final remainSec = durationSec - usedSec;
+      if (remainSec > 0) {
+        // 작업이 아직 남아 있으면 이어서 실행
+        _remainMap[runningId] = Duration(seconds: remainSec);
+        await _clearRunningTask(); // 기존 정보 삭제 후 새로 저장 준비
+
+        // 실제 일정 데이터를 찾아 재시작
+        final repo = ref.read(repositoryProvider);
+        try {
+          final e = repo.events.firstWhere((ev) => ev.id == runningId);
+          await _startEvent(e); // 남은 시간을 이용해 재시작
+        } catch (_) {
+          // 일정이 삭제되었으면 정보만 초기화
+          _remainMap.remove(runningId);
+          await _saveRemainMap();
+        }
+      } else {
+        // 이미 종료된 경우 남은 시간을 0으로 표시하고 정보 삭제
+        _remainMap[runningId] = Duration.zero;
+        await _clearRunningTask();
+        await _saveRemainMap();
+      }
+    } else {
+      // 실행 중인 작업이 없다면 저장된 남은 시간만 적용
+      await _saveRemainMap();
+    }
+
+    if (!mounted) return; // 위 과정에서 위젯이 dispose되었을 경우 대비
+    setState(() {}); // 복원된 정보로 화면 갱신
+  }
+
   @override
   void initState() {
     super.initState();
@@ -31,6 +151,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     for (final e in repo.events) {
       _remainMap[e.id] = e.endAt.difference(e.startAt);
     }
+
+    // 비동기적으로 저장된 상태 복원
+    Future.microtask(_loadState);
   }
 
   /// Duration을 "HH:mm" 형식의 문자열로 변환
@@ -42,7 +165,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   /// 일정 시작 처리
   /// - [e] 실행할 일정
-  void _startEvent(Event e) {
+  Future<void> _startEvent(Event e) async {
     var duration = _remainMap[e.id] ?? e.endAt.difference(e.startAt);
     if (duration == Duration.zero) {
       // 남은 시간이 0이면 처음부터 다시 시작
@@ -54,6 +177,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         .read(batteryControllerProvider.notifier)
         .startTask(ratePerHour: e.ratePerHour ?? 0, duration: duration);
 
+    // 시작한 작업 정보를 로컬 저장소에 기록
+    _remainMap[e.id] = duration;
+    await _saveRunningTask(
+        id: e.id, rate: e.ratePerHour ?? 0, duration: duration);
+
     // 남은 시간 카운트다운 시작
     _countdown?.cancel();
     setState(() {
@@ -61,18 +189,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       _remain = duration;
     });
     _countdown = Timer.periodic(const Duration(seconds: 1), (timer) {
-      setState(() {
-        if (_remain.inSeconds <= 1) {
-          _stopEvent();
-        } else {
+      if (_remain.inSeconds <= 1) {
+        _stopEvent(); // 시간이 끝나면 작업 종료
+      } else {
+        setState(() {
           _remain -= const Duration(seconds: 1);
-        }
-      });
+        });
+      }
     });
   }
 
   /// 일정 중지 처리
-  void _stopEvent() {
+  Future<void> _stopEvent() async {
     ref.read(batteryControllerProvider.notifier).stop();
     _countdown?.cancel();
     setState(() {
@@ -82,6 +210,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       }
       _taskId = null;
     });
+
+    // 중지 시점의 정보와 배터리를 저장소에 반영
+    await _saveRemainMap();
+    await _clearRunningTask();
   }
 
   @override
@@ -140,12 +272,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     // Dismissible이 제거된 뒤에도 위젯 트리에 남아있는 오류를 방지하기 위해
                     // 먼저 저장소에서 일정을 삭제한 뒤 setState로 화면을 갱신합니다.
                     await repo.deleteEvent(e.id); // 로컬 DB에서 일정 삭제
+                    final wasRunning = _taskId == e.id; // 삭제된 일정이 실행 중이었는지 확인
                     setState(() {
                       _remainMap.remove(e.id); // 남은 시간 정보도 제거
-                      if (_taskId == e.id) {
-                        _stopEvent(); // 실행 중인 일정이 삭제되면 중지
-                      }
                     });
+                    if (wasRunning) {
+                      await _stopEvent(); // 실행 중인 일정이 삭제되면 중지
+                    } else {
+                      await _saveRemainMap(); // 변경된 남은 시간 맵 저장
+                    }
                   },
                   child: ListTile(
                     title: Text(e.title), // 일정 제목
@@ -164,11 +299,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       ],
                     ),
                     trailing: ElevatedButton(
-                      onPressed: () {
+                      onPressed: () async {
                         if (running) {
-                          _stopEvent();
+                          await _stopEvent();
                         } else {
-                          _startEvent(e);
+                          await _startEvent(e);
                         }
                       },
                       child: Text(running ? '중지' : '시작'),
