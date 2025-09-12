@@ -2,6 +2,7 @@ name: energy_battery
 description: 로컬 배터리 시뮬레이터
 publish_to: 'none'
 version: 1.0.0+1
+
 environment:
   sdk: '>=3.0.0 <4.0.0'
 
@@ -23,6 +24,13 @@ dev_dependencies:
     sdk: flutter
   build_runner: any
   drift_dev: any
+  flutter_launcher_icons: ^0.13.1   # ← 추가
 
 flutter:
   uses-material-design: true
+
+flutter_launcher_icons:             # ← 앱 아이콘 설정 블록
+  android: true
+  ios: true
+  image_path: "assets/icon/app_icon.png"  # 저장한 아이콘 경로
+  remove_alpha_ios: true
