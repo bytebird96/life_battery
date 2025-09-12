@@ -59,38 +59,38 @@ class AppRepository {
 
   /// 이벤트 저장
   Future<void> saveEvent(Event e) async {
-    // 동일 ID 이벤트가 있으면 교체
+    // 동일 ID를 가진 일정이 이미 존재하면 제거 후
+    // 새 일정으로 대체하여 메모리 목록을 최신 상태로 유지
     events.removeWhere((ex) => ex.id == e.id);
     events.add(e);
 
-    // 로컬 데이터베이스에 upsert 수행
-    await _db.customInsert(
+    // customInsert는 null 값을 허용하지 않으므로
+    // null 이 될 수 있는 ratePerHour를 다루기 위해 customStatement로 변경한다.
+    // customStatement의 arguments는 List<Object?> 타입이라 null 전달이 가능하다.
+    await _db.customStatement(
       'INSERT OR REPLACE INTO events '
       '(id, title, start_at, end_at, type, rate_per_hour, priority, created_at, updated_at) '
       'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      // List<Variable<Object?>>로 명시하여 null 가능 타입을 함께 다룬다.
-      // 그렇지 않으면 double? 타입이 들어갈 때 컴파일 오류가 발생한다.
-      variables: <dr.Variable<Object?>>[
-        dr.Variable<String>(e.id), // 문자열 ID
-        dr.Variable<String>(e.title), // 일정 제목
-        dr.Variable<int>(e.startAt.millisecondsSinceEpoch), // 시작 시각(ms)
-        dr.Variable<int>(e.endAt.millisecondsSinceEpoch), // 종료 시각(ms)
-        dr.Variable<int>(e.type.index), // 이벤트 유형(enum 인덱스)
-        dr.Variable<double?>(
-            e.ratePerHour), // 시간당 회복량은 null 가능하므로 double?
-        dr.Variable<int>(e.priority), // 우선순위
-        dr.Variable<int>(e.createdAt.millisecondsSinceEpoch), // 생성 시각(ms)
-        dr.Variable<int>(e.updatedAt.millisecondsSinceEpoch), // 수정 시각(ms)
+      [
+        e.id, // 1. 일정 ID (문자열)
+        e.title, // 2. 일정 제목
+        e.startAt.millisecondsSinceEpoch, // 3. 시작 시각을 밀리초 단위로
+        e.endAt.millisecondsSinceEpoch, // 4. 종료 시각을 밀리초 단위로
+        e.type.index, // 5. 이벤트 유형(enum)을 인덱스로 저장
+        e.ratePerHour, // 6. 시간당 배터리 변화량 (null 허용)
+        e.priority, // 7. 우선순위
+        e.createdAt.millisecondsSinceEpoch, // 8. 생성 시각(ms)
+        e.updatedAt.millisecondsSinceEpoch, // 9. 수정 시각(ms)
       ],
     );
   }
 
   /// 이벤트 삭제
   Future<void> deleteEvent(String id) async {
-    // 메모리 상의 리스트에서 제거
+    // 1. 메모리 상의 일정 목록에서 해당 ID 삭제
     events.removeWhere((e) => e.id == id);
 
-    // 로컬 데이터베이스에서도 삭제
+    // 2. 로컬 데이터베이스에서도 같은 ID의 행을 제거
     await _db.customStatement('DELETE FROM events WHERE id = ?', [id]);
   }
 
