@@ -8,6 +8,7 @@ enum EventType { work, rest, sleep, neutral }
 class Event {
   final String id;
   final String title;
+  final String? content; // 일정에 대한 상세 설명 (없을 수도 있음)
   final DateTime startAt;
   final DateTime endAt;
   final EventType type;
@@ -19,6 +20,7 @@ class Event {
   Event({
     required this.id,
     required this.title,
+    this.content,
     required this.startAt,
     required this.endAt,
     required this.type,
