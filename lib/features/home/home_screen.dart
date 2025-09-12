@@ -135,9 +135,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: const Icon(Icons.delete, color: Colors.white),
                   ),
-                  onDismissed: (_) {
+                  onDismissed: (_) async {
+                    // Dismissible이 제거된 뒤에도 위젯 트리에 남아있는 오류를 방지하기 위해
+                    // 먼저 저장소에서 일정을 삭제한 뒤 setState로 화면을 갱신합니다.
+                    await repo.deleteEvent(e.id); // 로컬 DB에서 일정 삭제
                     setState(() {
-                      repo.deleteEvent(e.id); // 일정 삭제
                       _remainMap.remove(e.id); // 남은 시간 정보도 제거
                       if (_taskId == e.id) {
                         _stopEvent(); // 실행 중인 일정이 삭제되면 중지

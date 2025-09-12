@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:drift/drift.dart' as dr; // SQL 실행을 위한 Drift 유틸
 import '../core/time.dart';
 import '../core/compute.dart';
 import 'models.dart';
@@ -15,10 +16,37 @@ class AppRepository {
 
   Future<void> init() async {
     _db = db.AppDb(); // 로컬 데이터베이스 초기화
-    // 설정 존재 확인 후 없으면 기본값 삽입
-    settings = UserSettings();
-    // 초기 실행 시 타임라인을 바로 확인할 수 있도록 더미 이벤트 삽입
-    await addDummy(DateTime.now());
+
+    // DB에 저장된 이벤트 목록을 모두 불러온다.
+    final result = await _db.customSelect('SELECT * FROM events').get();
+    events = result
+        .map((row) => Event(
+              id: row.data['id'] as String,
+              title: row.data['title'] as String,
+              content: null, // DB 구조상 내용 컬럼이 없으므로 null 처리
+              startAt: DateTime.fromMillisecondsSinceEpoch(
+                  row.data['start_at'] as int),
+              endAt:
+                  DateTime.fromMillisecondsSinceEpoch(row.data['end_at'] as int),
+              type: EventType.values[row.data['type'] as int],
+              ratePerHour: row.data['rate_per_hour'] as double?,
+              priority: row.data['priority'] as int,
+              createdAt: DateTime.fromMillisecondsSinceEpoch(
+                  row.data['created_at'] as int),
+              updatedAt: DateTime.fromMillisecondsSinceEpoch(
+                  row.data['updated_at'] as int),
+            ))
+        .toList();
+
+    // 저장된 이벤트가 하나도 없다면 더미 데이터를 추가하고 DB에도 저장한다.
+    if (events.isEmpty) {
+      await addDummy(DateTime.now());
+      // addDummy에서 생성한 리스트를 복사해 DB에 저장
+      final dummy = List<Event>.from(events);
+      for (final e in dummy) {
+        await saveEvent(e); // DB에 저장
+      }
+    }
   }
 
   /// 오늘 윈도우 이벤트 조회
@@ -34,12 +62,33 @@ class AppRepository {
     // 동일 ID 이벤트가 있으면 교체
     events.removeWhere((ex) => ex.id == e.id);
     events.add(e);
+
+    // 로컬 데이터베이스에 upsert 수행
+    await _db.customInsert(
+      'INSERT OR REPLACE INTO events '
+      '(id, title, start_at, end_at, type, rate_per_hour, priority, created_at, updated_at) '
+      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      variables: [
+        dr.Variable<String>(e.id),
+        dr.Variable<String>(e.title),
+        dr.Variable<int>(e.startAt.millisecondsSinceEpoch),
+        dr.Variable<int>(e.endAt.millisecondsSinceEpoch),
+        dr.Variable<int>(e.type.index),
+        dr.Variable<double?>(e.ratePerHour),
+        dr.Variable<int>(e.priority),
+        dr.Variable<int>(e.createdAt.millisecondsSinceEpoch),
+        dr.Variable<int>(e.updatedAt.millisecondsSinceEpoch),
+      ],
+    );
   }
 
   /// 이벤트 삭제
   Future<void> deleteEvent(String id) async {
-    // ID 일치 이벤트 제거
+    // 메모리 상의 리스트에서 제거
     events.removeWhere((e) => e.id == id);
+
+    // 로컬 데이터베이스에서도 삭제
+    await _db.customStatement('DELETE FROM events WHERE id = ?', [id]);
   }
 
   /// 시뮬레이션 실행
