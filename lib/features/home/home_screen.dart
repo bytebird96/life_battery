@@ -3,9 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'battery_gauge.dart';
 import 'battery_controller.dart';
+import '../../data/repositories.dart';
 
 /// 홈 화면
-/// - 시작/중지 버튼으로 작업을 실행하고 남은 시간을 표시
+/// - 등록된 일정 목록을 보여주고 스와이프로 삭제 가능
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
@@ -15,57 +16,53 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   Timer? _countdown; // 남은 시간을 표시하는 타이머
-  Duration _remain = Duration.zero; // 현재 실행 중인 작업의 남은 시간
-  String? _task; // 현재 진행 중인 작업 식별자
+  String? _taskId; // 현재 실행 중인 일정의 ID
+  Duration _remain = Duration.zero; // 현재 실행 중인 일정의 남은 시간
 
-  /// 각 작업별 기본 지속 시간
-  /// - 사용자가 중지했다가 다시 시작할 때 남은 시간을 기억하기 위해 사용
-  final Map<String, Duration> _baseDurations = {
-    'sleep': const Duration(hours: 7),
-    'work': const Duration(hours: 8),
-  };
-
-  /// 작업별로 남아 있는 시간 저장소
-  /// - 처음에는 기본 지속 시간으로 채워짐
-  late Map<String, Duration> _remainMap;
+  // 각 일정별로 남은 시간을 저장하는 맵
+  final Map<String, Duration> _remainMap = {};
 
   @override
   void initState() {
     super.initState();
-    // 모든 작업의 남은 시간을 기본값으로 초기화
-    _remainMap = Map.from(_baseDurations);
+    // 최초 실행 시 저장소의 일정 목록으로 남은 시간 초기화
+    final repo = ref.read(repositoryProvider);
+    for (final e in repo.events) {
+      _remainMap[e.id] = e.endAt.difference(e.startAt);
+    }
   }
 
-  /// 남은 시간을 HH:mm 형식으로 표시
+  /// Duration을 "HH:mm" 형식의 문자열로 변환
   String _format(Duration d) {
     final h = d.inHours.toString().padLeft(2, '0');
     final m = (d.inMinutes % 60).toString().padLeft(2, '0');
     return '$h:$m';
   }
 
-  /// 작업 시작 공통 처리
-  /// [id] 작업 식별자, [rate] 시간당 증감 퍼센트
-  /// - 기존에 중지한 적이 있다면 그때의 남은 시간부터 다시 시작
-  void _startTask(String id, double rate) {
-    // 직전에 저장된 남은 시간이 0이면 처음부터 시작
-    var duration = _remainMap[id] ?? _baseDurations[id]!;
-    if (duration == Duration.zero) duration = _baseDurations[id]!;
+  /// 일정 시작 처리
+  /// - [e] 실행할 일정
+  void _startEvent(Event e) {
+    var duration = _remainMap[e.id] ?? e.endAt.difference(e.startAt);
+    if (duration == Duration.zero) {
+      // 남은 시간이 0이면 처음부터 다시 시작
+      duration = e.endAt.difference(e.startAt);
+    }
 
-    // 배터리 타이머 시작
+    // 배터리 컨트롤러에 작업 시작 요청
     ref
         .read(batteryControllerProvider.notifier)
-        .startTask(ratePerHour: rate, duration: duration);
+        .startTask(ratePerHour: e.ratePerHour ?? 0, duration: duration);
 
-    // 카운트다운 타이머 시작
+    // 남은 시간 카운트다운 시작
     _countdown?.cancel();
     setState(() {
-      _task = id;
+      _taskId = e.id;
       _remain = duration;
     });
     _countdown = Timer.periodic(const Duration(seconds: 1), (timer) {
       setState(() {
         if (_remain.inSeconds <= 1) {
-          _stopTask();
+          _stopEvent();
         } else {
           _remain -= const Duration(seconds: 1);
         }
@@ -73,16 +70,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     });
   }
 
-  /// 작업 중지
-  void _stopTask() {
+  /// 일정 중지 처리
+  void _stopEvent() {
     ref.read(batteryControllerProvider.notifier).stop();
     _countdown?.cancel();
     setState(() {
-      // 현재 작업이 있다면 남은 시간을 저장해 재시작에 활용
-      if (_task != null) {
-        _remainMap[_task!] = _remain;
+      if (_taskId != null) {
+        // 중지 시점의 남은 시간을 저장해 다음 시작에 활용
+        _remainMap[_taskId!] = _remain;
       }
-      _task = null;
+      _taskId = null;
     });
   }
 
@@ -94,69 +91,88 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final repo = ref.watch(repositoryProvider); // 저장된 일정 목록을 제공
     final battery = ref.watch(batteryControllerProvider); // 현재 배터리 퍼센트
+
+    // 새로 추가된 일정이 있으면 기본 남은 시간을 설정
+    for (final e in repo.events) {
+      _remainMap.putIfAbsent(e.id, () => e.endAt.difference(e.startAt));
+    }
 
     return Scaffold(
       appBar: AppBar(title: const Text('에너지 배터리')),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () async {
+          // 일정 추가 화면으로 이동 후 돌아오면 목록 갱신
+          await Navigator.pushNamed(context, '/event');
+          setState(() {}); // 리빌드하여 새 일정 표시
+        },
+        child: const Icon(Icons.add),
+      ),
       body: Column(
         children: [
           const SizedBox(height: 16),
-          // 배터리 게이지
+          // 배터리 게이지 표시
           BatteryGauge(percent: battery / 100),
           const SizedBox(height: 16),
-          // 일정 목록
+          // 일정 목록 영역
           Expanded(
-            child: ListView(
-              children: [
-                // 수면 7시간 예시
-                ListTile(
-                  title: const Text('수면 7시간 (시간당 10%)'),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('충전 70%'),
-                      if (_task == 'sleep')
-                        Text(_format(_remain),
-                            style: Theme.of(context).textTheme.bodySmall),
-                    ],
+            child: ListView.builder(
+              itemCount: repo.events.length,
+              itemBuilder: (context, index) {
+                final e = repo.events[index]; // 현재 일정
+                final base = e.endAt.difference(e.startAt); // 일정의 전체 소요 시간
+                final total =
+                    (e.ratePerHour ?? 0) * (base.inMinutes / 60); // 전체 배터리 변화
+                final running = _taskId == e.id; // 현재 실행 중인지 여부
+
+                return Dismissible(
+                  key: ValueKey(e.id),
+                  direction: DismissDirection.endToStart,
+                  background: Container(
+                    color: Colors.red,
+                    alignment: Alignment.centerRight,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: const Icon(Icons.delete, color: Colors.white),
                   ),
-                  trailing: ElevatedButton(
-                    onPressed: () {
-                      if (_task == 'sleep') {
-                        _stopTask();
-                      } else {
-                        // 저장된 남은 시간부터 다시 시작
-                        _startTask('sleep', 10);
+                  onDismissed: (_) {
+                    setState(() {
+                      repo.deleteEvent(e.id); // 일정 삭제
+                      _remainMap.remove(e.id); // 남은 시간 정보도 제거
+                      if (_taskId == e.id) {
+                        _stopEvent(); // 실행 중인 일정이 삭제되면 중지
                       }
-                    },
-                    child: Text(_task == 'sleep' ? '중지' : '시작'),
+                    });
+                  },
+                  child: ListTile(
+                    title: Text(e.title), // 일정 제목
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (e.content != null && e.content!.isNotEmpty)
+                          Text(e.content!), // 일정 상세 내용
+                        Text('소요 시간: ${base.inMinutes}분'),
+                        Text('배터리 변화: ${total.toStringAsFixed(1)}%'),
+                        if (running)
+                          Text(
+                            _format(_remain),
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ), // 실행 중이면 남은 시간 표시
+                      ],
+                    ),
+                    trailing: ElevatedButton(
+                      onPressed: () {
+                        if (running) {
+                          _stopEvent();
+                        } else {
+                          _startEvent(e);
+                        }
+                      },
+                      child: Text(running ? '중지' : '시작'),
+                    ),
                   ),
-                ),
-                // 업무 8시간 예시
-                ListTile(
-                  title: const Text('업무 8시간 (시간당 5%)'),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('배터리 소모 예상 40%'),
-                      if (_task == 'work')
-                        Text(_format(_remain),
-                            style: Theme.of(context).textTheme.bodySmall),
-                    ],
-                  ),
-                  trailing: ElevatedButton(
-                    onPressed: () {
-                      if (_task == 'work') {
-                        _stopTask();
-                      } else {
-                        // 저장된 남은 시간부터 다시 시작
-                        _startTask('work', -5);
-                      }
-                    },
-                    child: Text(_task == 'work' ? '중지' : '시작'),
-                  ),
-                ),
-              ],
+                );
+              },
             ),
           ),
         ],
