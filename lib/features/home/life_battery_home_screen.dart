@@ -2,14 +2,14 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../data/repositories.dart'; // 일정 목록을 가져오기 위해 리포지토리 참조
 import 'battery_controller.dart';
 import 'widgets/life_tab_bar.dart'; // 하단 탭바 위젯
 
 /// HTML/CSS로 전달된 템플릿을 Flutter로 옮긴 홈 화면
 ///
-/// 상단의 시스템 상태바, "Life Battery" 제목, 중앙의 원형 배터리 게이지,
-/// 하단의 커스텀 탭바로 구성되어 있다. 일정 목록 등 추가 기능은 제외하고
-/// 템플릿 레이아웃을 그대로 재현하는 데 초점을 맞췄다.
+/// "Life Battery" 제목, 중앙의 원형 배터리 게이지, 일정 목록,
+/// 하단의 커스텀 탭바로 구성되어 있으며 템플릿 레이아웃을 재현했다.
 class LifeBatteryHomeScreen extends ConsumerWidget {
   const LifeBatteryHomeScreen({super.key});
 
@@ -28,14 +28,7 @@ class LifeBatteryHomeScreen extends ConsumerWidget {
           height: 812,
           child: Stack(
             children: [
-              // 1) 상단 시스템 상태바
-              const Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: _SystemStatusBar(),
-              ),
-              // 2) 화면 제목 "Life Battery"
+              // 1) 화면 제목 "Life Battery"
               const Positioned(
                 top: 64,
                 left: 0,
@@ -51,7 +44,7 @@ class LifeBatteryHomeScreen extends ConsumerWidget {
                   ),
                 ),
               ),
-              // 3) 중앙의 원형 배터리 게이지 (220x220 크기)
+              // 2) 중앙의 원형 배터리 게이지 (220x220 크기)
               Positioned(
                 top: 129,
                 left: 0,
@@ -59,6 +52,14 @@ class LifeBatteryHomeScreen extends ConsumerWidget {
                 child: Center(
                   child: _CircularBattery(percent: percent),
                 ),
+              ),
+              // 3) 일정 목록 영역
+              const Positioned(
+                top: 360,
+                left: 20,
+                right: 20,
+                bottom: 100, // 탭바와 겹치지 않도록 하단 여백 확보
+                child: _TaskList(),
               ),
               // 4) 하단 탭바 위치 (좌우 여백 40, 하단 8)
               Positioned(
@@ -74,57 +75,6 @@ class LifeBatteryHomeScreen extends ConsumerWidget {
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-/// 상단 상태바 영역을 그리는 위젯
-///
-/// 시간, 위치 아이콘, 통신/와이파이/배터리 아이콘을 배치하여
-/// 실제 모바일 기기의 상태바처럼 보이도록 구현하였다.
-class _SystemStatusBar extends StatelessWidget {
-  const _SystemStatusBar();
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 44,
-      child: Padding(
-        // 좌우 여백은 21px, 상단 여백은 13px 정도로 시안을 맞춘다.
-        padding: const EdgeInsets.fromLTRB(21, 13, 21, 11),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            // 왼쪽: 시간 텍스트와 위치 아이콘
-            Row(
-              children: const [
-                Text(
-                  '12:22',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w500,
-                    fontSize: 15,
-                    color: Color(0xFF070417),
-                    letterSpacing: -0.24,
-                  ),
-                ),
-                SizedBox(width: 6),
-                Icon(Icons.location_on_outlined,
-                    size: 16, color: Color(0xFF070417)),
-              ],
-            ),
-            // 오른쪽: 통신, 와이파이, 배터리 아이콘 순서대로 배치
-            Row(
-              children: const [
-                Icon(Icons.signal_cellular_alt, size: 20),
-                SizedBox(width: 4),
-                Icon(Icons.wifi, size: 20),
-                SizedBox(width: 4),
-                Icon(Icons.battery_full, size: 20),
-              ],
-            ),
-          ],
         ),
       ),
     );
@@ -173,6 +123,44 @@ class _CircularBattery extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// 일정 목록을 보여주는 위젯
+///
+/// 리포지토리에 저장된 이벤트 리스트를 불러와
+/// 초보자도 이해하기 쉽도록 제목과 시간을 단순 텍스트로 표시한다.
+class _TaskList extends ConsumerWidget {
+  const _TaskList();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // 리포지토리에서 현재 저장된 일정 목록을 조회
+    final events = ref.watch(repositoryProvider).events;
+
+    // 일정이 하나도 없다면 안내 문구 출력
+    if (events.isEmpty) {
+      return const Center(child: Text('등록된 일정이 없습니다.'));
+    }
+
+    return ListView.separated(
+      itemCount: events.length,
+      itemBuilder: (context, index) {
+        final e = events[index];
+        // 시작/종료 시각을 "HH:mm" 형식의 문자열로 변환
+        final start =
+            '${e.startAt.hour.toString().padLeft(2, '0')}:${e.startAt.minute.toString().padLeft(2, '0')}';
+        final end =
+            '${e.endAt.hour.toString().padLeft(2, '0')}:${e.endAt.minute.toString().padLeft(2, '0')}';
+
+        return ListTile(
+          title: Text(e.title),
+          subtitle: Text('$start - $end'),
+        );
+      },
+      // 각 항목 사이를 구분하기 위한 가는 선
+      separatorBuilder: (_, __) => const Divider(height: 1),
     );
   }
 }
