@@ -11,7 +11,8 @@ class BatteryController extends StateNotifier<double> {
 
   /// 작업을 시작하여 일정 시간 동안 배터리를 증감
   /// [ratePerHour] 시간당 퍼센트 변화량(음수 가능)
-  /// [duration] 작업 총 소요 시간
+  /// [duration] 남은 작업 시간
+  /// - 중지 후 다시 호출하면 남은 시간을 전달해 이어서 진행할 수 있음
   void startTask({required double ratePerHour, required Duration duration}) {
     stop(); // 기존 타이머가 있으면 정지
     var seconds = duration.inSeconds; // 남은 초
