@@ -58,6 +58,7 @@ class AppRepository {
       Event(
           id: '1',
           title: '작업',
+          content: '프로젝트 진행',
           startAt: DateTime(day.year, day.month, day.day, 9, 0),
           endAt: DateTime(day.year, day.month, day.day, 15, 0),
           type: EventType.work,
@@ -68,6 +69,7 @@ class AppRepository {
       Event(
           id: '2',
           title: '휴식',
+          content: '가벼운 산책',
           startAt: DateTime(day.year, day.month, day.day, 15, 0),
           endAt: DateTime(day.year, day.month, day.day, 15, 30),
           type: EventType.rest,
@@ -78,6 +80,7 @@ class AppRepository {
       Event(
           id: '3',
           title: '수면',
+          content: '밤사이 휴식',
           startAt: DateTime(day.year, day.month, day.day, 23, 30),
           endAt: DateTime(day.year, day.month, day.day + 1, 7, 30),
           type: EventType.sleep,
