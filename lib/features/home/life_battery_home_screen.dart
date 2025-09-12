@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'battery_controller.dart';
 import '../../data/repositories.dart'; // 일정 더미 데이터를 사용하기 위한 리포지토리
+import 'widgets/life_tab_bar.dart'; // 하단 탭바 위젯
 
 /// 원형 배터리 게이지와 일정 목록을 함께 보여주는 홈 화면
 ///
@@ -59,39 +60,19 @@ class LifeBatteryHomeScreen extends ConsumerWidget {
           ),
         ],
       ),
-      // 중앙 하단의 + 버튼
-      floatingActionButton: FloatingActionButton(
-        onPressed: () async {
-          // 기존 홈 화면처럼 일정 추가 화면으로 이동한다.
-          await Navigator.pushNamed(context, '/event');
-        },
-        backgroundColor: Colors.black,
-        child: const Icon(Icons.add, color: Colors.white),
-      ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
       // 하단 탭바 영역
       bottomNavigationBar: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          BottomAppBar(
-            shape: const CircularNotchedRectangle(),
-            notchMargin: 8,
-            child: SizedBox(
-              height: 60,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  // 왼쪽 시계 아이콘
-                  IconButton(
-                    icon: const Icon(Icons.access_time_outlined),
-                    onPressed: () {},
-                  ),
-                  // 오른쪽 파이차트 아이콘
-                  IconButton(
-                    icon: const Icon(Icons.pie_chart_outline),
-                    onPressed: () {},
-                  ),
-                ],
+          // 실제 탭바 디자인을 별도 위젯으로 분리하여 재사용성을 높인다.
+          // 가운데 + 버튼을 누르면 일정 추가 화면으로 이동한다.
+          Padding(
+            padding: const EdgeInsets.only(top: 0),
+            child: Center(
+              child: LifeTabBar(
+                onAdd: () async {
+                  await Navigator.pushNamed(context, '/event');
+                },
               ),
             ),
           ),
