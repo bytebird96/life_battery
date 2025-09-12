@@ -62,6 +62,19 @@ class LifeTabBar extends StatelessWidget {
               ),
             ),
           ),
+          // 하단의 홈 인디케이터 (회색 바)
+          Positioned(
+            left: 80,
+            bottom: 0,
+            child: Container(
+              width: 135,
+              height: 5,
+              decoration: BoxDecoration(
+                color: const Color(0xFF3C3C3C).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(100),
+              ),
+            ),
+          ),
         ],
       ),
     );
