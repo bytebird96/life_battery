@@ -471,17 +471,22 @@ class _CircularBatteryState extends State<_CircularBattery>
         alignment: Alignment.center,
         children: [
           if (widget.charging)
-            // 노란색 그라데이션 배경 (충전 중일 때만 표시)
+            // 노란색 외곽선이 밖으로 번지는 효과
+            // (배터리 원형의 테두리에서 밖으로 퍼져 나가는 느낌을 구현)
             Container(
-              width: _CircularBattery._gaugeSize + 40,
+              width: _CircularBattery._gaugeSize + 40, // 원보다 20px 크게 만들어 여유 공간 확보
               height: _CircularBattery._gaugeSize + 40,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 gradient: RadialGradient(
+                  // 중심은 투명, 테두리 부근에서 노란색이 보였다가 다시 투명해지는 그라데이션
                   colors: [
+                    Colors.transparent,
                     Colors.yellow.withOpacity(glow),
                     Colors.transparent,
                   ],
+                  // 0.8 지점까지는 완전히 투명 → 원형 테두리에서만 색이 보이게 설정
+                  stops: const [0.8, 0.9, 1.0],
                 ),
               ),
             ),
@@ -503,13 +508,15 @@ class _CircularBatteryState extends State<_CircularBattery>
               color: const Color(0xFF9B51E0), // 진한 보라색
             ),
           ),
-          // 중앙 퍼센트 및 충전 아이콘 표시
+          // 중앙 퍼센트와 충전 중임을 나타내는 번개 이모지 표시
           widget.charging
               ? Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.bolt, color: Colors.amber, size: 24),
+                    // Flutter 아이콘 대신 이모지를 사용해 디자인 시안과 동일한 느낌을 줌
+                    const Text('⚡', style: TextStyle(fontSize: 24)),
                     Text(
+                      // 배터리 퍼센트를 정수로 변환하여 표시
                       '${(widget.percent * 100).toStringAsFixed(0)}%',
                       style: const TextStyle(
                         fontWeight: FontWeight.w500,
