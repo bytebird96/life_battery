@@ -1,33 +1,257 @@
+import 'dart:async'; // Timer 사용
+import 'dart:convert'; // JSON 변환
 import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'battery_controller.dart';
+import '../../data/models.dart'; // Event 모델 사용
+import '../../data/repositories.dart'; // 일정 저장소
+import '../../services/notifications.dart'; // 알림 서비스
+import 'package:shared_preferences/shared_preferences.dart'; // 로컬 저장소
 import 'widgets/life_tab_bar.dart'; // 하단 탭바 위젯
 
 /// HTML/CSS로 전달된 템플릿을 Flutter로 옮긴 홈 화면
 ///
 /// "Life Battery" 제목, 중앙의 원형 배터리 게이지, 일정 목록,
 /// 하단의 커스텀 탭바로 구성되어 있으며 템플릿 레이아웃을 재현했다.
-class LifeBatteryHomeScreen extends ConsumerWidget {
+class LifeBatteryHomeScreen extends ConsumerStatefulWidget {
   const LifeBatteryHomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<LifeBatteryHomeScreen> createState() => _LifeBatteryHomeScreenState();
+}
+
+class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
+  // ------------------------------ 상태 필드 ------------------------------
+  // 현재 실행 중인 일정의 ID
+  String? _runningId;
+
+  // 실행 중인 일정의 남은 시간
+  Duration _remain = Duration.zero;
+
+  // 각 일정별 남은 시간을 저장하는 맵
+  final Map<String, Duration> _remainMap = {};
+
+  // 주기적으로 남은 시간을 감소시키는 타이머
+  Timer? _countdown;
+
+  /// 화면이 처음 생성될 때 저장된 상태를 복원한다.
+  @override
+  void initState() {
+    super.initState();
+    // 저장된 일정 목록의 기본 남은 시간을 초기화
+    final repo = ref.read(repositoryProvider);
+    for (final e in repo.events) {
+      _remainMap[e.id] = e.endAt.difference(e.startAt);
+    }
+
+    // 비동기적으로 저장된 실행 정보 복원
+    Future.microtask(_loadState);
+  }
+
+  /// 위젯이 제거될 때 타이머를 정리한다.
+  @override
+  void dispose() {
+    _countdown?.cancel();
+    super.dispose();
+  }
+
+  // ------------------------------ 저장/복원 로직 ------------------------------
+
+  /// 남은 시간 정보를 로컬 저장소에 저장
+  Future<void> _saveRemainMap() async {
+    final prefs = await SharedPreferences.getInstance();
+    final map = _remainMap.map((k, v) => MapEntry(k, v.inSeconds));
+    await prefs.setString('remainMap', jsonEncode(map));
+  }
+
+  /// 실행 중인 작업 정보를 저장
+  Future<void> _saveRunningTask({required String id, required double rate, required Duration duration}) async {
+    final prefs = await SharedPreferences.getInstance();
+    final battery = ref.read(batteryControllerProvider);
+    await prefs.setDouble('battery', battery);
+    await prefs.setString('taskId', id);
+    await prefs.setDouble('ratePerHour', rate);
+    await prefs.setInt('duration', duration.inSeconds);
+    await prefs.setInt('startTime', DateTime.now().millisecondsSinceEpoch);
+    await _saveRemainMap();
+  }
+
+  /// 실행 중인 작업 정보를 초기화
+  Future<void> _clearRunningTask() async {
+    final prefs = await SharedPreferences.getInstance();
+    final battery = ref.read(batteryControllerProvider);
+    await prefs.setDouble('battery', battery);
+    await prefs.remove('taskId');
+    await prefs.remove('ratePerHour');
+    await prefs.remove('duration');
+    await prefs.remove('startTime');
+  }
+
+  /// 앱 재시작 시 저장된 정보를 복원
+  Future<void> _loadState() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    final remainStr = prefs.getString('remainMap');
+    if (remainStr != null) {
+      final decoded = Map<String, dynamic>.from(jsonDecode(remainStr));
+      decoded.forEach((key, value) {
+        _remainMap[key] = Duration(seconds: value as int);
+      });
+    }
+
+    final savedBattery = prefs.getDouble('battery');
+    if (savedBattery != null) {
+      ref.read(batteryControllerProvider.notifier).state = savedBattery;
+    }
+
+    final runningId = prefs.getString('taskId');
+    if (runningId != null) {
+      final rate = prefs.getDouble('ratePerHour') ?? 0;
+      final durationSec = prefs.getInt('duration') ?? 0;
+      final startMillis = prefs.getInt('startTime') ?? 0;
+
+      final elapsed = DateTime.now().millisecondsSinceEpoch ~/ 1000 - startMillis ~/ 1000;
+      final usedSec = elapsed > durationSec ? durationSec : elapsed;
+
+      final perSecond = rate / 3600;
+      var battery = ref.read(batteryControllerProvider);
+      battery += perSecond * usedSec;
+      battery = battery.clamp(0, 100);
+      ref.read(batteryControllerProvider.notifier).state = battery;
+      ref.read(batteryControllerProvider.notifier).stop();
+
+      final remainSec = durationSec - usedSec;
+      if (remainSec > 0) {
+        _remainMap[runningId] = Duration(seconds: remainSec);
+        await _clearRunningTask();
+        final repo = ref.read(repositoryProvider);
+        try {
+          final e = repo.events.firstWhere((ev) => ev.id == runningId);
+          await _startEvent(e);
+        } catch (_) {
+          _remainMap.remove(runningId);
+          await _saveRemainMap();
+        }
+      } else {
+        _remainMap[runningId] = Duration.zero;
+        await _clearRunningTask();
+        await _saveRemainMap();
+      }
+    } else {
+      await _saveRemainMap();
+    }
+
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  // ------------------------------ 일정 제어 ------------------------------
+
+  /// 일정 시작
+  Future<void> _startEvent(Event e) async {
+    var duration = _remainMap[e.id] ?? e.endAt.difference(e.startAt);
+    if (duration == Duration.zero) {
+      duration = e.endAt.difference(e.startAt);
+    }
+    if (duration <= Duration.zero) {
+      _remainMap[e.id] = Duration.zero;
+      await _saveRemainMap();
+      return;
+    }
+
+    ref.read(batteryControllerProvider.notifier).startTask(
+          ratePerHour: e.ratePerHour ?? 0,
+          duration: duration,
+        );
+
+    // ------------------------------
+    // 알림 관련 처리는 플랫폼에 따라 실패할 수 있다.
+    // 예를 들어 웹이나 테스트 환경에서는 플러그인이 동작하지 않아
+    // 예외가 발생할 수 있으므로 try/catch로 감싸 안전하게 처리한다.
+    // ------------------------------
+    final notif = ref.read(notificationProvider);
+    try {
+      await notif.cancel(e.id.hashCode); // 기존 예약 알림 취소
+      await notif.scheduleComplete(
+        id: e.id.hashCode,
+        title: '일정 완료',
+        body: '${e.title}이(가) 완료되었습니다',
+        after: duration,
+      );
+    } catch (e) {
+      // 알림 예약이 실패해도 작업 진행에는 문제가 없으므로
+      // 콘솔에만 오류를 표시하고 무시한다.
+      debugPrint('알림 예약 실패: $e');
+    }
+
+    _remainMap[e.id] = duration;
+    await _saveRunningTask(id: e.id, rate: e.ratePerHour ?? 0, duration: duration);
+
+    _countdown?.cancel();
+    setState(() {
+      _runningId = e.id;
+      _remain = duration;
+    });
+    _countdown = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_remain.inSeconds <= 1) {
+        _stopEvent(completed: true);
+      } else {
+        setState(() {
+          _remain -= const Duration(seconds: 1);
+        });
+      }
+    });
+  }
+
+  /// 일정 중지
+  Future<void> _stopEvent({bool completed = false}) async {
+    ref.read(batteryControllerProvider.notifier).stop();
+    _countdown?.cancel();
+
+    // 작업 중지 시에도 예약된 알림이 있다면 취소해야 한다.
+    // 플러그인 미설치 등의 이유로 실패할 수 있으므로 역시 예외를 무시한다.
+    if (!completed && _runningId != null) {
+      try {
+        await ref.read(notificationProvider).cancel(_runningId!.hashCode);
+      } catch (e) {
+        debugPrint('알림 취소 실패: $e');
+      }
+    }
+
+    setState(() {
+      if (_runningId != null) {
+        _remainMap[_runningId!] =
+            _remain.inSeconds <= 1 ? Duration.zero : _remain;
+      }
+      _runningId = null;
+    });
+
+    await _saveRemainMap();
+    await _clearRunningTask();
+  }
+
+  // ------------------------------ 빌드 ------------------------------
+  @override
+  Widget build(BuildContext context) {
     // 배터리 퍼센트(0~100)를 상태관리에서 읽어와 0~1 범위로 변환
     final percent = ref.watch(batteryControllerProvider) / 100;
+    final repo = ref.watch(repositoryProvider);
+
+    // 새로 추가된 일정이 있다면 기본 남은 시간을 설정
+    for (final e in repo.events) {
+      _remainMap.putIfAbsent(e.id, () => e.endAt.difference(e.startAt));
+    }
 
     return Scaffold(
       backgroundColor: Colors.white,
-      // Scaffold의 기본 여백을 제거하여 전체 화면을 완전히 사용한다.
       body: Center(
-        // 디자인 시안이 375x812 크기를 기준으로 하므로 SizedBox로 감싼다.
         child: SizedBox(
           width: 375,
           height: 812,
           child: Stack(
             children: [
-              // 1) 화면 제목 "Life Battery"
               const Positioned(
                 top: 64,
                 left: 0,
@@ -43,32 +267,50 @@ class LifeBatteryHomeScreen extends ConsumerWidget {
                   ),
                 ),
               ),
-              // 2) 중앙의 원형 배터리 게이지 (220x220 크기)
               Positioned(
                 top: 129,
                 left: 0,
                 right: 0,
-                child: Center(
-                  child: _CircularBattery(percent: percent),
-                ),
+                child: Center(child: _CircularBattery(percent: percent)),
               ),
-              // 3) 일정 목록 영역
-              const Positioned(
+              Positioned(
                 top: 360,
                 left: 20,
                 right: 20,
-                bottom: 100, // 탭바와 겹치지 않도록 하단 여백 확보
-                child: _TaskList(),
+                bottom: 100,
+                child: ListView.separated(
+                  itemCount: repo.events.length,
+                  itemBuilder: (context, index) {
+                    final e = repo.events[index];
+                    final running = _runningId == e.id;
+                    final base = e.endAt.difference(e.startAt);
+                    final remain = running ? _remain : _remainMap[e.id] ?? base;
+
+                    return _EventTile(
+                      event: e,
+                      running: running,
+                      remain: remain,
+                      onPressed: () async {
+                        if (running) {
+                          await _stopEvent();
+                        } else {
+                          await _startEvent(e);
+                        }
+                      },
+                    );
+                  },
+                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                ),
               ),
-              // 4) 하단 탭바 위치 (좌우 여백 40, 하단 8)
               Positioned(
                 left: 40,
                 right: 40,
                 bottom: 8,
                 child: LifeTabBar(
                   onAdd: () async {
-                    // + 버튼을 누르면 일정 추가 화면으로 이동한다.
+                    // 일정 추가 후 돌아오면 목록 갱신
                     await Navigator.pushNamed(context, '/event');
+                    if (mounted) setState(() {});
                   },
                 ),
               ),
@@ -127,64 +369,33 @@ class _CircularBattery extends StatelessWidget {
 }
 
 /// 일정 목록을 보여주는 위젯
-///
-/// 실제 데이터베이스 연동 대신 디자인 확인용 더미 데이터를 사용한다.
-/// 한 항목은 "업무"라는 제목과 두 개의 태그, 그리고 진행 시간으로 구성된다.
-class _TaskList extends StatelessWidget {
-  const _TaskList();
+/// 디자인 시안과 유사한 형태로 이벤트를 표시하는 타일
+class _EventTile extends StatelessWidget {
+  final Event event; // 표시할 일정 정보
+  final bool running; // 현재 실행 중인지 여부
+  final Duration remain; // 남은 시간
+  final VoidCallback onPressed; // 시작/중지 버튼 콜백
 
-  @override
-  Widget build(BuildContext context) {
-    // 화면에 보여줄 더미 테스크 목록. 추후 실제 데이터와 교체하면 된다.
-    final tasks = [
-      _Task(
-        title: '업무',
-        category: 'Work',
-        project: 'Rasion Project',
-        duration: '00:42:21',
-      ),
-    ];
-
-    return ListView.separated(
-      itemCount: tasks.length,
-      itemBuilder: (context, index) => _TaskTile(task: tasks[index]),
-      separatorBuilder: (_, __) => const SizedBox(height: 12),
-    );
-  }
-}
-
-/// 하나의 테스크 정보를 담는 간단한 모델
-class _Task {
-  final String title; // 테스크 제목 (예: 업무)
-  final String category; // 분류 태그 (예: Work)
-  final String project; // 프로젝트 태그 (예: Rasion Project)
-  final String duration; // 진행 시간 문자열
-
-  _Task({
-    required this.title,
-    required this.category,
-    required this.project,
-    required this.duration,
+  const _EventTile({
+    required this.event,
+    required this.running,
+    required this.remain,
+    required this.onPressed,
   });
-}
-
-/// 디자인 시안과 동일한 형태로 테스크를 보여주는 위젯
-class _TaskTile extends StatelessWidget {
-  final _Task task;
-
-  const _TaskTile({required this.task});
 
   @override
   Widget build(BuildContext context) {
+    // 이벤트 유형을 문자열 태그로 변환 (예: work -> Work)
+    final typeTag = event.type.name[0].toUpperCase() + event.type.name.substring(1);
+
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF7F7FA), // 연한 회색 배경
+        color: const Color(0xFFF7F7FA),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Row(
         children: [
-          // 1) 왼쪽 모서리의 보라색 원과 모니터 아이콘
           Container(
             width: 40,
             height: 40,
@@ -195,7 +406,6 @@ class _TaskTile extends StatelessWidget {
             child: const Icon(Icons.computer, color: Colors.white),
           ),
           const SizedBox(width: 12),
-          // 2) 제목과 태그들
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -204,16 +414,15 @@ class _TaskTile extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        task.title,
+                        event.title,
                         style: const TextStyle(
                           fontWeight: FontWeight.w500,
                           color: Colors.black,
                         ),
                       ),
                     ),
-                    // 우측 상단에 진행 시간 표시
                     Text(
-                      task.duration,
+                      _formatDuration(remain),
                       style: const TextStyle(color: Colors.black54),
                     ),
                   ],
@@ -222,27 +431,38 @@ class _TaskTile extends StatelessWidget {
                 Row(
                   children: [
                     _TagChip(
-                      text: task.category,
-                      color: const Color(0xFFFFE8EC), // 연한 분홍색 배경
-                      textColor: const Color(0xFFF35D6A), // 분홍 글씨
+                      text: typeTag,
+                      color: const Color(0xFFFFE8EC),
+                      textColor: const Color(0xFFF35D6A),
                     ),
                     const SizedBox(width: 4),
-                    _TagChip(
-                      text: task.project,
-                      color: const Color(0xFFF5F0FF), // 연한 보라색 배경
-                      textColor: const Color(0xFF9B51E0), // 보라 글씨
-                    ),
+                    if (event.content != null && event.content!.isNotEmpty)
+                      _TagChip(
+                        text: event.content!,
+                        color: const Color(0xFFF5F0FF),
+                        textColor: const Color(0xFF9B51E0),
+                      ),
                   ],
                 ),
               ],
             ),
           ),
           const SizedBox(width: 12),
-          // 3) 오른쪽 끝의 재생 아이콘
-          const Icon(Icons.play_arrow, color: Colors.black26),
+          IconButton(
+            icon: Icon(running ? Icons.stop : Icons.play_arrow),
+            onPressed: onPressed,
+          ),
         ],
       ),
     );
+  }
+
+  /// 타일 내부에서 사용할 짧은 시간 포맷터
+  String _formatDuration(Duration d) {
+    final h = d.inHours.toString().padLeft(2, '0');
+    final m = (d.inMinutes % 60).toString().padLeft(2, '0');
+    final s = (d.inSeconds % 60).toString().padLeft(2, '0');
+    return '$h:$m:$s';
   }
 }
 
