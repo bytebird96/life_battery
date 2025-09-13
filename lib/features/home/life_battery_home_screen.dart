@@ -476,7 +476,8 @@ class _CircularBatteryState extends State<_CircularBattery>
   @override
   Widget build(BuildContext context) {
     // 애니메이션 값(0~1)을 이용해 그라데이션 투명도를 조절한다.
-    final glow = 0.2 + _glowController.value * 0.3; // 0.2~0.5 범위의 투명도
+    // 기존보다 더 강한 색감을 주기 위해 기본 투명도를 높이고 범위를 넓힌다.
+    final glow = 0.3 + _glowController.value * 0.5; // 0.3~0.8 범위의 투명도
 
     return SizedBox(
       width: _CircularBattery._gaugeSize,
@@ -485,21 +486,22 @@ class _CircularBatteryState extends State<_CircularBattery>
         alignment: Alignment.center,
         children: [
           if (widget.charging)
-            // 노란색 외곽선이 밖으로 번지는 효과
+            // 주황색 외곽선이 밖으로 번지는 효과
             // (배터리 원형의 테두리에서 밖으로 퍼져 나가는 느낌을 구현)
             Container(
-              width: _CircularBattery._gaugeSize + 40, // 원보다 20px 크게 만들어 여유 공간 확보
+              // 원보다 여유 있게 크게 만들어 밖으로 퍼지는 빛을 표시
+              width: _CircularBattery._gaugeSize + 40,
               height: _CircularBattery._gaugeSize + 40,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 gradient: RadialGradient(
-                  // 중심은 투명, 테두리 부근에서 노란색이 보였다가 다시 투명해지는 그라데이션
+                  // 중심은 투명, 0.8 지점부터 진한 주황색이 나타나도록 설정
                   colors: [
                     Colors.transparent,
-                    Colors.yellow.withOpacity(glow),
+                    Colors.orangeAccent.withOpacity(glow), // 더 진한 색으로 강조
                     Colors.transparent,
                   ],
-                  // 0.8 지점까지는 완전히 투명 → 원형 테두리에서만 색이 보이게 설정
+                  // 원형 테두리에서 색이 시작돼 바깥으로 사라지도록 중간 지점을 지정
                   stops: const [0.8, 0.9, 1.0],
                 ),
               ),
@@ -540,8 +542,8 @@ class _CircularBatteryState extends State<_CircularBattery>
               ? Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Flutter 아이콘 대신 이모지를 사용해 디자인 시안과 동일한 느낌을 줌
-                    const Text('⚡', style: TextStyle(fontSize: 24)),
+                    // 번개 이모지: 퍼센트 글자보다 살짝 작은 크기(32)로 표시
+                    const Text('⚡', style: TextStyle(fontSize: 32)),
                     Text(
                       // 배터리 퍼센트를 정수로 변환하여 표시
                       '${(widget.percent * 100).toStringAsFixed(0)}%',
