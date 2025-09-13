@@ -30,6 +30,10 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
   // 실행 중인 일정의 남은 시간
   Duration _remain = Duration.zero;
 
+  // 현재 실행 중인 일정의 배터리 증감률
+  // 양수면 충전, 음수면 소모를 의미한다.
+  double _runningRate = 0;
+
   // 각 일정별 남은 시간을 저장하는 맵
   final Map<String, Duration> _remainMap = {};
 
@@ -193,6 +197,7 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
     setState(() {
       _runningId = e.id;
       _remain = duration;
+      _runningRate = e.ratePerHour ?? 0; // 현재 실행 중인 일정의 배터리 변화율 저장
     });
     _countdown = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (_remain.inSeconds <= 1) {
@@ -226,6 +231,7 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
             _remain.inSeconds <= 1 ? Duration.zero : _remain;
       }
       _runningId = null;
+      _runningRate = 0; // 실행 중인 일정이 없으므로 배터리 변화율 초기화
     });
 
     await _saveRemainMap();
@@ -292,66 +298,99 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
                 top: 129,
                 left: 0,
                 right: 0,
-                child: Center(child: _CircularBattery(percent: percent)),
+                child: Center(
+                  child: _CircularBattery(
+                    percent: percent,
+                    charging: _runningRate > 0, // 양수면 충전 중으로 판단
+                  ),
+                ),
               ),
               Positioned(
-                top: 360,
+              Positioned(
+                top: 330,
                 left: 20,
                 right: 20,
                 bottom: 100,
-                child: ListView.separated(
-                  itemCount: repo.events.length,
-                  itemBuilder: (context, index) {
-                    final e = repo.events[index];
-                    final running = _runningId == e.id;
-                    final base = e.endAt.difference(e.startAt);
-                    final remain = running ? _remain : _remainMap[e.id] ?? base;
-                    final rate = _rateFor(e, repo); // 시간당 배터리 증감률 계산
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Today',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          '일정',
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                        ),
+                        GestureDetector(
+                          onTap: () => Navigator.pushNamed(context, '/events'),
+                          child: const Text(
+                            'See All',
+                            style: TextStyle(color: Colors.grey),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    // 홈 화면에서는 최대 3개의 일정만 표시한다.
+                    Expanded(
+                      child: ListView.separated(
+                        itemCount: repo.events.length > 3 ? 3 : repo.events.length,
+                        itemBuilder: (context, index) {
+                          final e = repo.events[index];
+                          final running = _runningId == e.id;
+                          final base = e.endAt.difference(e.startAt); // 전체 시간
+                          final remain = running ? _remain : _remainMap[e.id] ?? base;
+                          final rate = _rateFor(e, repo); // 시간당 배터리 증감률 계산
 
-                    // Dismissible로 감싸 밀어서 삭제 기능 제공
-                    return Dismissible(
-                      key: ValueKey(e.id),
-                      direction: DismissDirection.endToStart,
-                      background: Container(
-                        alignment: Alignment.centerRight,
-                        padding: const EdgeInsets.only(right: 20),
-                        color: Colors.red,
-                        child: const Icon(Icons.delete, color: Colors.white),
-                      ),
-                      onDismissed: (_) async {
-                        // 실행 중인 일정이 삭제되면 먼저 중지
-                        if (running) {
-                          await _stopEvent();
-                        }
-                        // 알림이 예약되어 있을 수 있으므로 취소 시도
-                        try {
-                          await ref.read(notificationProvider).cancel(e.id.hashCode);
-                        } catch (_) {
-                          // 실패해도 앱 동작에는 영향이 없으므로 무시
-                        }
-                        // 리포지토리와 남은 시간 맵에서 제거
-                        await ref.read(repositoryProvider).deleteEvent(e.id);
-                        setState(() {
-                          _remainMap.remove(e.id);
-                        });
-                        await _saveRemainMap();
-                      },
-                      child: _EventTile(
-                        event: e,
-                        running: running,
-                        remain: remain,
-                        rate: rate,
-                        onPressed: () async {
-                          if (running) {
-                            await _stopEvent();
-                          } else {
-                            await _startEvent(e);
-                          }
+                          // 스와이프로 삭제할 수 있도록 Dismissible 사용
+                          return Dismissible(
+                            key: ValueKey(e.id),
+                            direction: DismissDirection.endToStart,
+                            background: Container(
+                              alignment: Alignment.centerRight,
+                              padding: const EdgeInsets.only(right: 20),
+                              color: Colors.red,
+                              child: const Icon(Icons.delete, color: Colors.white),
+                            ),
+                            onDismissed: (_) async {
+                              if (running) {
+                                await _stopEvent(); // 실행 중이면 중지
+                              }
+                              try {
+                                await ref.read(notificationProvider).cancel(e.id.hashCode);
+                              } catch (_) {
+                                // 실패해도 무시
+                              }
+                              await ref.read(repositoryProvider).deleteEvent(e.id);
+                              setState(() {
+                                _remainMap.remove(e.id); // 남은 시간도 제거
+                              });
+                              await _saveRemainMap();
+                            },
+                            child: _EventTile(
+                              event: e,
+                              running: running,
+                              remain: remain,
+                              rate: rate,
+                              onPressed: () async {
+                                if (running) {
+                                  await _stopEvent();
+                                } else {
+                                  await _startEvent(e);
+                                }
+                              },
+                            ),
+                          );
                         },
+                        separatorBuilder: (_, __) => const SizedBox(height: 12),
                       ),
-                    );
-                  },
-                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                    ),
+                  ],
                 ),
               ),
               Positioned(
@@ -375,23 +414,81 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
 }
 
 /// 배터리 퍼센트를 원형으로 그려주는 위젯
-class _CircularBattery extends StatelessWidget {
+class _CircularBattery extends StatefulWidget {
   final double percent; // 0~1 사이의 값
+  final bool charging; // 현재 충전 중인지 여부
 
-  const _CircularBattery({required this.percent});
+  const _CircularBattery({required this.percent, this.charging = false});
+
+  // 원형 배터리 전체 크기 (220px에서 30% 축소된 154px)
+  static const double _gaugeSize = 154;
+
+  @override
+  State<_CircularBattery> createState() => _CircularBatteryState();
+}
+
+class _CircularBatteryState extends State<_CircularBattery>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    // 2초 주기로 서서히 밝아졌다가 어두워지는 애니메이션 컨트롤러
+    _controller =
+        AnimationController(vsync: this, duration: const Duration(seconds: 2));
+    if (widget.charging) {
+      _controller.repeat(reverse: true); // 충전 중일 때만 반복 재생
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _CircularBattery oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 충전 상태가 바뀔 때 애니메이션 재생 여부를 갱신
+    if (widget.charging && !_controller.isAnimating) {
+      _controller.repeat(reverse: true);
+    } else if (!widget.charging && _controller.isAnimating) {
+      _controller.stop();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    // 디자인 시안과 동일하게 220x220 크기의 원형 게이지를 사용한다.
+    // 애니메이션 값(0~1)을 이용해 그라데이션 투명도를 조절한다.
+    final glow = 0.2 + _controller.value * 0.3; // 0.2~0.5 범위의 투명도
+
     return SizedBox(
-      width: 220,
-      height: 220,
+      width: _CircularBattery._gaugeSize,
+      height: _CircularBattery._gaugeSize,
       child: Stack(
         alignment: Alignment.center,
         children: [
+          if (widget.charging)
+            // 노란색 그라데이션 배경 (충전 중일 때만 표시)
+            Container(
+              width: _CircularBattery._gaugeSize + 40,
+              height: _CircularBattery._gaugeSize + 40,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [
+                    Colors.yellow.withOpacity(glow),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+            ),
           // 연한 배경 원 (전체 100%)
           CustomPaint(
-            size: const Size(220, 220),
+            size: const Size(
+                _CircularBattery._gaugeSize, _CircularBattery._gaugeSize),
             painter: _CirclePainter(
               progress: 1,
               color: const Color(0xFFEAE6FF), // 옅은 보라색
@@ -399,21 +496,37 @@ class _CircularBattery extends StatelessWidget {
           ),
           // 실제 퍼센트만큼 채워지는 보라색 원호
           CustomPaint(
-            size: const Size(220, 220),
+            size: const Size(
+                _CircularBattery._gaugeSize, _CircularBattery._gaugeSize),
             painter: _CirclePainter(
-              progress: percent,
+              progress: widget.percent,
               color: const Color(0xFF9B51E0), // 진한 보라색
             ),
           ),
-          // 중앙에 퍼센트 텍스트 표시
-          Text(
-            '${(percent * 100).toStringAsFixed(0)}%',
-            style: const TextStyle(
-              fontWeight: FontWeight.w500,
-              fontSize: 40,
-              letterSpacing: 2, // 디자인에서 사용된 자간
-            ),
-          ),
+          // 중앙 퍼센트 및 충전 아이콘 표시
+          widget.charging
+              ? Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.bolt, color: Colors.amber, size: 24),
+                    Text(
+                      '${(widget.percent * 100).toStringAsFixed(0)}%',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w500,
+                        fontSize: 40,
+                        letterSpacing: 2,
+                      ),
+                    ),
+                  ],
+                )
+              : Text(
+                  '${(widget.percent * 100).toStringAsFixed(0)}%',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w500,
+                    fontSize: 40,
+                    letterSpacing: 2,
+                  ),
+                ),
         ],
       ),
     );
@@ -576,7 +689,8 @@ class _CirclePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    const strokeWidth = 16.0; // 선의 두께 (디자인 시안과 동일)
+    // 선 두께도 전체 크기 축소 비율(30%)에 맞춰 11.2로 조정
+    const strokeWidth = 11.2; // 기존 16에서 30% 줄인 값
     final center = Offset(size.width / 2, size.height / 2);
     final radius = min(size.width, size.height) / 2 - strokeWidth / 2;
 
