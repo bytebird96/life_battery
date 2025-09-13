@@ -265,6 +265,18 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
       _remainMap.putIfAbsent(e.id, () => e.endAt.difference(e.startAt));
     }
 
+    // 현재 실행 중인 일정이 있고 그 일정의 배터리 변화율이 양수라면
+    // "충전 중"으로 판단하여 게이지에 애니메이션을 적용한다.
+    bool isCharging = false;
+    if (_runningId != null) {
+      final running = repo.events.where((ev) => ev.id == _runningId);
+      if (running.isNotEmpty) {
+        final e = running.first;
+        final rate = _rateFor(e, repo);
+        isCharging = rate > 0; // 0보다 크면 충전, 작으면 소모
+      }
+    }
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: Center(
@@ -292,7 +304,13 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
                 top: 129,
                 left: 0,
                 right: 0,
-                child: Center(child: _CircularBattery(percent: percent)),
+                // 원형 배터리 게이지 표시. 충전 중이면 회전/반짝 애니메이션 적용
+                child: Center(
+                  child: _CircularBattery(
+                    percent: percent,
+                    charging: isCharging,
+                  ),
+                ),
               ),
               Positioned(
                 top: 360,
@@ -375,10 +393,51 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
 }
 
 /// 배터리 퍼센트를 원형으로 그려주는 위젯
-class _CircularBattery extends StatelessWidget {
+///
+/// [charging]이 true이면 원형이 계속 회전하며
+/// 번쩍이는 노란색 배경과 번개 아이콘을 표시한다.
+class _CircularBattery extends StatefulWidget {
   final double percent; // 0~1 사이의 값
+  final bool charging; // 현재 충전 중인지 여부
 
-  const _CircularBattery({required this.percent});
+  const _CircularBattery({required this.percent, required this.charging});
+
+  @override
+  State<_CircularBattery> createState() => _CircularBatteryState();
+}
+
+class _CircularBatteryState extends State<_CircularBattery>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller; // 회전 및 반짝임 제어
+
+  @override
+  void initState() {
+    super.initState();
+    _controller =
+        AnimationController(vsync: this, duration: const Duration(seconds: 2));
+    if (widget.charging) {
+      // 충전 중이면 애니메이션 반복 시작
+      _controller.repeat();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _CircularBattery oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 충전 상태가 변경되면 애니메이션을 시작/정지한다.
+    if (widget.charging && !_controller.isAnimating) {
+      _controller.repeat();
+    } else if (!widget.charging && _controller.isAnimating) {
+      _controller.stop();
+      _controller.reset(); // 다시 0도로 초기화
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -389,31 +448,83 @@ class _CircularBattery extends StatelessWidget {
       child: Stack(
         alignment: Alignment.center,
         children: [
-          // 연한 배경 원 (전체 100%)
-          CustomPaint(
-            size: const Size(220, 220),
-            painter: _CirclePainter(
-              progress: 1,
-              color: const Color(0xFFEAE6FF), // 옅은 보라색
+          if (widget.charging)
+            // 노란색이 번쩍이는 배경. sin 함수를 이용해 밝기가 주기적으로 변한다.
+            AnimatedBuilder(
+              animation: _controller,
+              builder: (context, child) {
+                final t =
+                    (sin(2 * pi * _controller.value) + 1) / 2; // 0~1 범위 값
+                return Opacity(
+                  opacity: 0.5 + 0.5 * t, // 0.5~1.0 사이로 깜빡임
+                  child: Container(
+                    width: 220,
+                    height: 220,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: RadialGradient(
+                        colors: [
+                          Colors.white,
+                          Colors.yellow.shade200,
+                          Colors.yellow.shade700,
+                        ],
+                        stops: const [0.0, 0.7, 1.0],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          // 회전하는 원형 프로그래스 (배경 + 현재 퍼센트)
+          RotationTransition(
+            turns:
+                widget.charging ? _controller : const AlwaysStoppedAnimation(0),
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                // 연한 배경 원 (전체 100%)
+                CustomPaint(
+                  size: const Size(220, 220),
+                  painter: _CirclePainter(
+                    progress: 1,
+                    color: const Color(0xFFEAE6FF), // 옅은 보라색
+                  ),
+                ),
+                // 실제 퍼센트만큼 채워지는 보라색 원호
+                CustomPaint(
+                  size: const Size(220, 220),
+                  painter: _CirclePainter(
+                    progress: widget.percent,
+                    color: const Color(0xFF9B51E0), // 진한 보라색
+                  ),
+                ),
+              ],
             ),
           ),
-          // 실제 퍼센트만큼 채워지는 보라색 원호
-          CustomPaint(
-            size: const Size(220, 220),
-            painter: _CirclePainter(
-              progress: percent,
-              color: const Color(0xFF9B51E0), // 진한 보라색
-            ),
-          ),
-          // 중앙에 퍼센트 텍스트 표시
-          Text(
-            '${(percent * 100).toStringAsFixed(0)}%',
-            style: const TextStyle(
-              fontWeight: FontWeight.w500,
-              fontSize: 40,
-              letterSpacing: 2, // 디자인에서 사용된 자간
-            ),
-          ),
+          // 중앙에 퍼센트 또는 충전 중 텍스트 표시
+          widget.charging
+              ? Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: const [
+                    Text(
+                      '충전 중',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w500,
+                        fontSize: 24,
+                      ),
+                    ),
+                    SizedBox(width: 4),
+                    Icon(Icons.bolt, color: Colors.amber, size: 24),
+                  ],
+                )
+              : Text(
+                  '${(widget.percent * 100).toStringAsFixed(0)}%',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w500,
+                    fontSize: 40,
+                    letterSpacing: 2, // 디자인에서 사용된 자간
+                  ),
+                ),
         ],
       ),
     );
