@@ -232,6 +232,27 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
     await _clearRunningTask();
   }
 
+  /// 일정에 따라 시간당 배터리 증감률을 계산하는 함수
+  ///
+  /// `ratePerHour`가 null일 경우 이벤트 종류별 기본값을 사용한다.
+  double _rateFor(Event e, AppRepository repo) {
+    if (e.ratePerHour != null) {
+      return e.ratePerHour!; // 일정에 지정된 값
+    }
+
+    // 종류에 따라 기본 배터리 변화량 결정
+    switch (e.type) {
+      case EventType.work:
+        return -repo.settings.defaultDrainRate; // 작업은 배터리 소모
+      case EventType.rest:
+        return repo.settings.defaultRestRate; // 휴식은 조금 충전
+      case EventType.sleep:
+        return repo.settings.sleepChargeRate; // 수면은 많이 충전
+      case EventType.neutral:
+        return 0; // 중립은 변화 없음
+    }
+  }
+
   // ------------------------------ 빌드 ------------------------------
   @override
   Widget build(BuildContext context) {
@@ -285,18 +306,49 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
                     final running = _runningId == e.id;
                     final base = e.endAt.difference(e.startAt);
                     final remain = running ? _remain : _remainMap[e.id] ?? base;
+                    final rate = _rateFor(e, repo); // 시간당 배터리 증감률 계산
 
-                    return _EventTile(
-                      event: e,
-                      running: running,
-                      remain: remain,
-                      onPressed: () async {
+                    // Dismissible로 감싸 밀어서 삭제 기능 제공
+                    return Dismissible(
+                      key: ValueKey(e.id),
+                      direction: DismissDirection.endToStart,
+                      background: Container(
+                        alignment: Alignment.centerRight,
+                        padding: const EdgeInsets.only(right: 20),
+                        color: Colors.red,
+                        child: const Icon(Icons.delete, color: Colors.white),
+                      ),
+                      onDismissed: (_) async {
+                        // 실행 중인 일정이 삭제되면 먼저 중지
                         if (running) {
                           await _stopEvent();
-                        } else {
-                          await _startEvent(e);
                         }
+                        // 알림이 예약되어 있을 수 있으므로 취소 시도
+                        try {
+                          await ref.read(notificationProvider).cancel(e.id.hashCode);
+                        } catch (_) {
+                          // 실패해도 앱 동작에는 영향이 없으므로 무시
+                        }
+                        // 리포지토리와 남은 시간 맵에서 제거
+                        await ref.read(repositoryProvider).deleteEvent(e.id);
+                        setState(() {
+                          _remainMap.remove(e.id);
+                        });
+                        await _saveRemainMap();
                       },
+                      child: _EventTile(
+                        event: e,
+                        running: running,
+                        remain: remain,
+                        rate: rate,
+                        onPressed: () async {
+                          if (running) {
+                            await _stopEvent();
+                          } else {
+                            await _startEvent(e);
+                          }
+                        },
+                      ),
                     );
                   },
                   separatorBuilder: (_, __) => const SizedBox(height: 12),
@@ -374,12 +426,14 @@ class _EventTile extends StatelessWidget {
   final Event event; // 표시할 일정 정보
   final bool running; // 현재 실행 중인지 여부
   final Duration remain; // 남은 시간
+  final double rate; // 시간당 배터리 증감률
   final VoidCallback onPressed; // 시작/중지 버튼 콜백
 
   const _EventTile({
     required this.event,
     required this.running,
     required this.remain,
+    required this.rate,
     required this.onPressed,
   });
 
@@ -421,9 +475,21 @@ class _EventTile extends StatelessWidget {
                         ),
                       ),
                     ),
-                    Text(
-                      _formatDuration(remain),
-                      style: const TextStyle(color: Colors.black54),
+                    // 남은 시간과 그 동안 변하는 배터리 퍼센트 표시
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _formatDuration(remain),
+                          style: const TextStyle(color: Colors.black54),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          // 전체 남은 시간 동안 변하는 배터리 양 계산
+                          '(${_batteryDelta(rate, remain)})',
+                          style: const TextStyle(color: Colors.black54, fontSize: 12),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -463,6 +529,13 @@ class _EventTile extends StatelessWidget {
     final m = (d.inMinutes % 60).toString().padLeft(2, '0');
     final s = (d.inSeconds % 60).toString().padLeft(2, '0');
     return '$h:$m:$s';
+  }
+
+  /// 남은 시간 동안 변화하는 배터리 퍼센트를 계산해 문자열로 반환
+  String _batteryDelta(double rate, Duration remain) {
+    final change = rate * remain.inSeconds / 3600;
+    final sign = change > 0 ? '+' : '';
+    return '$sign${change.toStringAsFixed(1)}%';
   }
 }
 
