@@ -295,63 +295,91 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
                 child: Center(child: _CircularBattery(percent: percent)),
               ),
               Positioned(
-                top: 360,
+              Positioned(
+                top: 330,
                 left: 20,
                 right: 20,
                 bottom: 100,
-                child: ListView.separated(
-                  itemCount: repo.events.length,
-                  itemBuilder: (context, index) {
-                    final e = repo.events[index];
-                    final running = _runningId == e.id;
-                    final base = e.endAt.difference(e.startAt);
-                    final remain = running ? _remain : _remainMap[e.id] ?? base;
-                    final rate = _rateFor(e, repo); // 시간당 배터리 증감률 계산
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Today',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          '일정',
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                        ),
+                        GestureDetector(
+                          onTap: () => Navigator.pushNamed(context, '/events'),
+                          child: const Text(
+                            'See All',
+                            style: TextStyle(color: Colors.grey),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    // 홈 화면에서는 최대 3개의 일정만 표시한다.
+                    Expanded(
+                      child: ListView.separated(
+                        itemCount: repo.events.length > 3 ? 3 : repo.events.length,
+                        itemBuilder: (context, index) {
+                          final e = repo.events[index];
+                          final running = _runningId == e.id;
+                          final base = e.endAt.difference(e.startAt); // 전체 시간
+                          final remain = running ? _remain : _remainMap[e.id] ?? base;
+                          final rate = _rateFor(e, repo); // 시간당 배터리 증감률 계산
 
-                    // Dismissible로 감싸 밀어서 삭제 기능 제공
-                    return Dismissible(
-                      key: ValueKey(e.id),
-                      direction: DismissDirection.endToStart,
-                      background: Container(
-                        alignment: Alignment.centerRight,
-                        padding: const EdgeInsets.only(right: 20),
-                        color: Colors.red,
-                        child: const Icon(Icons.delete, color: Colors.white),
-                      ),
-                      onDismissed: (_) async {
-                        // 실행 중인 일정이 삭제되면 먼저 중지
-                        if (running) {
-                          await _stopEvent();
-                        }
-                        // 알림이 예약되어 있을 수 있으므로 취소 시도
-                        try {
-                          await ref.read(notificationProvider).cancel(e.id.hashCode);
-                        } catch (_) {
-                          // 실패해도 앱 동작에는 영향이 없으므로 무시
-                        }
-                        // 리포지토리와 남은 시간 맵에서 제거
-                        await ref.read(repositoryProvider).deleteEvent(e.id);
-                        setState(() {
-                          _remainMap.remove(e.id);
-                        });
-                        await _saveRemainMap();
-                      },
-                      child: _EventTile(
-                        event: e,
-                        running: running,
-                        remain: remain,
-                        rate: rate,
-                        onPressed: () async {
-                          if (running) {
-                            await _stopEvent();
-                          } else {
-                            await _startEvent(e);
-                          }
+                          // 스와이프로 삭제할 수 있도록 Dismissible 사용
+                          return Dismissible(
+                            key: ValueKey(e.id),
+                            direction: DismissDirection.endToStart,
+                            background: Container(
+                              alignment: Alignment.centerRight,
+                              padding: const EdgeInsets.only(right: 20),
+                              color: Colors.red,
+                              child: const Icon(Icons.delete, color: Colors.white),
+                            ),
+                            onDismissed: (_) async {
+                              if (running) {
+                                await _stopEvent(); // 실행 중이면 중지
+                              }
+                              try {
+                                await ref.read(notificationProvider).cancel(e.id.hashCode);
+                              } catch (_) {
+                                // 실패해도 무시
+                              }
+                              await ref.read(repositoryProvider).deleteEvent(e.id);
+                              setState(() {
+                                _remainMap.remove(e.id); // 남은 시간도 제거
+                              });
+                              await _saveRemainMap();
+                            },
+                            child: _EventTile(
+                              event: e,
+                              running: running,
+                              remain: remain,
+                              rate: rate,
+                              onPressed: () async {
+                                if (running) {
+                                  await _stopEvent();
+                                } else {
+                                  await _startEvent(e);
+                                }
+                              },
+                            ),
+                          );
                         },
+                        separatorBuilder: (_, __) => const SizedBox(height: 12),
                       ),
-                    );
-                  },
-                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                    ),
+                  ],
                 ),
               ),
               Positioned(
@@ -380,18 +408,22 @@ class _CircularBattery extends StatelessWidget {
 
   const _CircularBattery({required this.percent});
 
+  // 원형 배터리 전체 크기
+  // 기존 220px에서 30% 줄인 154px를 사용한다.
+  static const double _gaugeSize = 154;
+
   @override
   Widget build(BuildContext context) {
-    // 디자인 시안과 동일하게 220x220 크기의 원형 게이지를 사용한다.
+    // 디자인 시안(220x220)에서 30% 축소된 154x154 크기의 원형 게이지를 사용한다.
     return SizedBox(
-      width: 220,
-      height: 220,
+      width: _gaugeSize,
+      height: _gaugeSize,
       child: Stack(
         alignment: Alignment.center,
         children: [
           // 연한 배경 원 (전체 100%)
           CustomPaint(
-            size: const Size(220, 220),
+            size: const Size(_gaugeSize, _gaugeSize),
             painter: _CirclePainter(
               progress: 1,
               color: const Color(0xFFEAE6FF), // 옅은 보라색
@@ -399,7 +431,7 @@ class _CircularBattery extends StatelessWidget {
           ),
           // 실제 퍼센트만큼 채워지는 보라색 원호
           CustomPaint(
-            size: const Size(220, 220),
+            size: const Size(_gaugeSize, _gaugeSize),
             painter: _CirclePainter(
               progress: percent,
               color: const Color(0xFF9B51E0), // 진한 보라색
@@ -576,7 +608,8 @@ class _CirclePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    const strokeWidth = 16.0; // 선의 두께 (디자인 시안과 동일)
+    // 선 두께도 전체 크기 축소 비율(30%)에 맞춰 11.2로 조정
+    const strokeWidth = 11.2; // 기존 16에서 30% 줄인 값
     final center = Offset(size.width / 2, size.height / 2);
     final radius = min(size.width, size.height) / 2 - strokeWidth / 2;
 

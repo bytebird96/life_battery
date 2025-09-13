@@ -5,6 +5,7 @@ import 'features/home/life_battery_home_screen.dart';
 import 'features/event/edit_event_screen.dart';
 import 'features/settings/settings_screen.dart';
 import 'features/report/report_screen.dart';
+import 'features/home/event_list_screen.dart'; // 전체 일정 화면
 import 'services/notifications.dart';
 
 /// 앱 시작점
@@ -34,6 +35,7 @@ class EnergyBatteryApp extends StatelessWidget {
       routes: {
         '/': (_) => const LifeBatteryHomeScreen(),
         '/event': (_) => const EditEventScreen(),
+        '/events': (_) => const EventListScreen(),
         '/settings': (_) => const SettingsScreen(),
         '/report': (_) => const ReportScreen(),
       },
