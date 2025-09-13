@@ -3,7 +3,7 @@ import 'dart:convert'; // 맵을 JSON 문자열로 변환하기 위해 사용
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart'; // 간단한 로컬 저장소
-import 'circular_battery.dart';
+import 'widgets/charging_ring.dart'; // 배터리 링 위젯
 import 'battery_controller.dart';
 import '../../data/repositories.dart';
 import '../../data/models.dart'; // Event 모델 사용을 위해 추가
@@ -283,8 +283,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       body: Column(
         children: [
           const SizedBox(height: 16),
-          // 원형 배터리 게이지 표시 (일정 실행 중이면 번개 애니메이션)
-          CircularBattery(percent: battery / 100, charging: _taskId != null),
+          // ChargingRing 위젯으로 배터리 상태 표시
+          ChargingRing(percent: battery / 100, charging: _taskId != null),
           const SizedBox(height: 16),
           // 일정 목록 영역
           Expanded(

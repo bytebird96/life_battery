@@ -19,7 +19,7 @@ dependencies:
   shared_preferences: ^2.2.2
   timezone: ^0.9.2
   sleek_circular_slider: ^2.0.1      # 원형 배터리 링 UI
-  avatar_glow: ^2.0.2               # 충전 시 네온 효과
+  avatar_glow: ^3.0.1               # 충전 시 네온 효과
 
 dev_dependencies:
   flutter_test:

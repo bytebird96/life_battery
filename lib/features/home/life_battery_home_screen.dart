@@ -1,6 +1,5 @@
 import 'dart:async'; // Timer 사용
 import 'dart:convert'; // JSON 변환
-import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,6 +9,7 @@ import '../../data/repositories.dart'; // 일정 저장소
 import '../../services/notifications.dart'; // 알림 서비스
 import 'package:shared_preferences/shared_preferences.dart'; // 로컬 저장소
 import 'widgets/life_tab_bar.dart'; // 하단 탭바 위젯
+import 'widgets/charging_ring.dart'; // 새로 만든 충전 링 위젯
 
 /// HTML/CSS로 전달된 템플릿을 Flutter로 옮긴 홈 화면
 ///
@@ -278,6 +278,7 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
           width: 375,
           height: 812,
           child: Stack(
+            clipBehavior: Clip.none, // 글로우가 잘리지 않도록 클리핑 해제
             children: [
               const Positioned(
                 top: 64,
@@ -299,8 +300,9 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
                 left: 0,
                 right: 0,
                 child: Center(
-                  child: _CircularBattery(
-                    percent: percent,
+                  // 배터리 잔량을 보여주는 ChargingRing 위젯
+                  child: ChargingRing(
+                    percent: percent, // 0~1 사이의 잔량
                     charging: _runningRate > 0, // 양수면 충전 중으로 판단
                   ),
                 ),
@@ -411,152 +413,6 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
     );
   }
 }
-
-/// 배터리 퍼센트를 원형으로 그려주는 위젯
-// ======================= _CircularBattery =======================
-class _CircularBattery extends StatefulWidget {
-  final double percent; // 0~1
-  final bool charging;
-
-  const _CircularBattery({required this.percent, this.charging = false});
-
-  static const double _gaugeSize = 154;
-
-  @override
-  State<_CircularBattery> createState() => _CircularBatteryState();
-}
-
-class _CircularBatteryState extends State<_CircularBattery>
-    with TickerProviderStateMixin {
-  late final AnimationController _glowController;     // 테두리 밖에서 깜빡이는 효과용 컨트롤러
-  late final AnimationController _rotationController; // 충전 중일 때 원형이 회전하는 컨트롤러
-
-  @override
-  void initState() {
-    super.initState();
-    // 2초 주기로 서서히 밝아졌다가 어두워지는 애니메이션 컨트롤러
-    _glowController =
-        AnimationController(vsync: this, duration: const Duration(seconds: 2));
-    // 6초 주기로 천천히 회전하는 애니메이션 컨트롤러
-    _rotationController =
-        AnimationController(vsync: this, duration: const Duration(seconds: 6));
-
-    if (widget.charging) {
-      // 충전 중이라면 두 컨트롤러 모두 동작
-      _glowController.repeat(reverse: true);
-      _rotationController.repeat();
-    }
-  }
-
-  @override
-  void didUpdateWidget(covariant _CircularBattery oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // 충전 상태가 바뀔 때 애니메이션 재생 여부를 갱신
-    if (widget.charging && !_glowController.isAnimating) {
-      _glowController.repeat(reverse: true);
-      _rotationController.repeat();
-    } else if (!widget.charging && _glowController.isAnimating) {
-      _glowController.stop();
-      _rotationController.stop();
-    }
-  }
-
-  @override
-  void dispose() {
-    _glowController.dispose();
-    _rotationController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // 애니메이션 값(0~1)을 이용해 바깥 Glow 투명도 조절
-    final glow = 0.3 + _glowController.value * 0.5; // 0.3~0.8 범위
-
-    return SizedBox(
-      width: _CircularBattery._gaugeSize,
-      height: _CircularBattery._gaugeSize,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          if (widget.charging)
-          // BoxShadow로 밖으로 퍼지는 Glow 효과
-            Container(
-              width: _CircularBattery._gaugeSize,
-              height: _CircularBattery._gaugeSize,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.transparent,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.orangeAccent.withOpacity(glow),
-                    blurRadius: 40,   // 얼마나 부드럽게 퍼질지
-                    spreadRadius: 8,  // 두께
-                  ),
-                ],
-              ),
-            ),
-          // 원형 자체를 회전시키기 위해 RotationTransition 사용
-          RotationTransition(
-            turns: _rotationController,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                // 연한 배경 원 (전체 100%)
-                CustomPaint(
-                  size: const Size(_CircularBattery._gaugeSize,
-                      _CircularBattery._gaugeSize),
-                  painter: _CirclePainter(
-                    progress: 1,
-                    color: const Color(0xFFEAE6FF), // 옅은 보라색
-                  ),
-                ),
-                // 실제 퍼센트만큼 채워지는 그라데이션 원호
-                CustomPaint(
-                  size: const Size(_CircularBattery._gaugeSize,
-                      _CircularBattery._gaugeSize),
-                  painter: _CirclePainter(
-                    progress: widget.percent,
-                    color: Colors.transparent,
-                    gradientColors: const [
-                      Color(0xFF4D5EF5), // 파란색 계열 시작 색
-                      Color(0xFF9B51E0), // 보라색 계열 끝 색
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // 중앙 퍼센트와 충전 중임을 나타내는 번개 이모지 표시
-          widget.charging
-              ? Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('⚡', style: TextStyle(fontSize: 32)),
-              Text(
-                '${(widget.percent * 100).toStringAsFixed(0)}%',
-                style: const TextStyle(
-                  fontWeight: FontWeight.w500,
-                  fontSize: 40,
-                  letterSpacing: 2,
-                ),
-              ),
-            ],
-          )
-              : Text(
-            '${(widget.percent * 100).toStringAsFixed(0)}%',
-            style: const TextStyle(
-              fontWeight: FontWeight.w500,
-              fontSize: 40,
-              letterSpacing: 2,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 
 /// 일정 목록을 보여주는 위젯
 /// 디자인 시안과 유사한 형태로 이벤트를 표시하는 타일
@@ -704,58 +560,3 @@ class _TagChip extends StatelessWidget {
     );
   }
 }
-
-/// 원형 진행률을 그려주는 커스텀 페인터
-class _CirclePainter extends CustomPainter {
-  final double progress; // 0~1 사이 진행률
-  final Color color; // 단색으로 칠할 때 사용되는 색상
-  final List<Color>? gradientColors; // 그라데이션을 적용할 경우 색상 목록
-
-  _CirclePainter(
-      {required this.progress, required this.color, this.gradientColors});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    // 선 두께도 전체 크기 축소 비율(30%)에 맞춰 11.2로 조정
-    const strokeWidth = 11.2; // 기존 16에서 30% 줄인 값
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = min(size.width, size.height) / 2 - strokeWidth / 2;
-
-    final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth
-      ..strokeCap = StrokeCap.round; // 끝을 둥글게 처리
-
-    final rect = Rect.fromCircle(center: center, radius: radius);
-
-    if (gradientColors != null) {
-      // 그라데이션 색상 목록이 주어졌다면 SweepGradient 사용
-      paint.shader = SweepGradient(
-        startAngle: -pi / 2, // 12시 방향부터 시작
-        endAngle: -pi / 2 + 2 * pi * progress, // 진행률만큼만 색상을 채움
-        colors: gradientColors!,
-      ).createShader(rect);
-    } else {
-      // 단색으로 표시
-      paint.color = color;
-    }
-
-    // -pi/2 부터 시작해서 progress 비율만큼 그린다 (12시 방향 기준)
-    canvas.drawArc(
-      rect,
-      -pi / 2,
-      2 * pi * progress,
-      false,
-      paint,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _CirclePainter oldDelegate) {
-    // progress 또는 color가 변경되면 다시 그린다
-    return oldDelegate.progress != progress ||
-        oldDelegate.color != color ||
-        oldDelegate.gradientColors != gradientColors;
-  }
-}
-
