@@ -295,63 +295,91 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
                 child: Center(child: _CircularBattery(percent: percent)),
               ),
               Positioned(
-                top: 360,
+              Positioned(
+                top: 330,
                 left: 20,
                 right: 20,
                 bottom: 100,
-                child: ListView.separated(
-                  itemCount: repo.events.length,
-                  itemBuilder: (context, index) {
-                    final e = repo.events[index];
-                    final running = _runningId == e.id;
-                    final base = e.endAt.difference(e.startAt);
-                    final remain = running ? _remain : _remainMap[e.id] ?? base;
-                    final rate = _rateFor(e, repo); // 시간당 배터리 증감률 계산
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Today',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          '일정',
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                        ),
+                        GestureDetector(
+                          onTap: () => Navigator.pushNamed(context, '/events'),
+                          child: const Text(
+                            'See All',
+                            style: TextStyle(color: Colors.grey),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    // 홈 화면에서는 최대 3개의 일정만 표시한다.
+                    Expanded(
+                      child: ListView.separated(
+                        itemCount: repo.events.length > 3 ? 3 : repo.events.length,
+                        itemBuilder: (context, index) {
+                          final e = repo.events[index];
+                          final running = _runningId == e.id;
+                          final base = e.endAt.difference(e.startAt); // 전체 시간
+                          final remain = running ? _remain : _remainMap[e.id] ?? base;
+                          final rate = _rateFor(e, repo); // 시간당 배터리 증감률 계산
 
-                    // Dismissible로 감싸 밀어서 삭제 기능 제공
-                    return Dismissible(
-                      key: ValueKey(e.id),
-                      direction: DismissDirection.endToStart,
-                      background: Container(
-                        alignment: Alignment.centerRight,
-                        padding: const EdgeInsets.only(right: 20),
-                        color: Colors.red,
-                        child: const Icon(Icons.delete, color: Colors.white),
-                      ),
-                      onDismissed: (_) async {
-                        // 실행 중인 일정이 삭제되면 먼저 중지
-                        if (running) {
-                          await _stopEvent();
-                        }
-                        // 알림이 예약되어 있을 수 있으므로 취소 시도
-                        try {
-                          await ref.read(notificationProvider).cancel(e.id.hashCode);
-                        } catch (_) {
-                          // 실패해도 앱 동작에는 영향이 없으므로 무시
-                        }
-                        // 리포지토리와 남은 시간 맵에서 제거
-                        await ref.read(repositoryProvider).deleteEvent(e.id);
-                        setState(() {
-                          _remainMap.remove(e.id);
-                        });
-                        await _saveRemainMap();
-                      },
-                      child: _EventTile(
-                        event: e,
-                        running: running,
-                        remain: remain,
-                        rate: rate,
-                        onPressed: () async {
-                          if (running) {
-                            await _stopEvent();
-                          } else {
-                            await _startEvent(e);
-                          }
+                          // 스와이프로 삭제할 수 있도록 Dismissible 사용
+                          return Dismissible(
+                            key: ValueKey(e.id),
+                            direction: DismissDirection.endToStart,
+                            background: Container(
+                              alignment: Alignment.centerRight,
+                              padding: const EdgeInsets.only(right: 20),
+                              color: Colors.red,
+                              child: const Icon(Icons.delete, color: Colors.white),
+                            ),
+                            onDismissed: (_) async {
+                              if (running) {
+                                await _stopEvent(); // 실행 중이면 중지
+                              }
+                              try {
+                                await ref.read(notificationProvider).cancel(e.id.hashCode);
+                              } catch (_) {
+                                // 실패해도 무시
+                              }
+                              await ref.read(repositoryProvider).deleteEvent(e.id);
+                              setState(() {
+                                _remainMap.remove(e.id); // 남은 시간도 제거
+                              });
+                              await _saveRemainMap();
+                            },
+                            child: _EventTile(
+                              event: e,
+                              running: running,
+                              remain: remain,
+                              rate: rate,
+                              onPressed: () async {
+                                if (running) {
+                                  await _stopEvent();
+                                } else {
+                                  await _startEvent(e);
+                                }
+                              },
+                            ),
+                          );
                         },
+                        separatorBuilder: (_, __) => const SizedBox(height: 12),
                       ),
-                    );
-                  },
-                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                    ),
+                  ],
                 ),
               ),
               Positioned(
