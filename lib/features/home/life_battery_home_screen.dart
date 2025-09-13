@@ -306,7 +306,6 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
                 ),
               ),
               Positioned(
-              Positioned(
                 top: 330,
                 left: 20,
                 right: 20,
@@ -414,13 +413,13 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
 }
 
 /// 배터리 퍼센트를 원형으로 그려주는 위젯
+// ======================= _CircularBattery =======================
 class _CircularBattery extends StatefulWidget {
-  final double percent; // 0~1 사이의 값
-  final bool charging; // 현재 충전 중인지 여부
+  final double percent; // 0~1
+  final bool charging;
 
   const _CircularBattery({required this.percent, this.charging = false});
 
-  // 원형 배터리 전체 크기 (220px에서 30% 축소된 154px)
   static const double _gaugeSize = 154;
 
   @override
@@ -429,10 +428,8 @@ class _CircularBattery extends StatefulWidget {
 
 class _CircularBatteryState extends State<_CircularBattery>
     with TickerProviderStateMixin {
-  late final AnimationController
-      _glowController; // 테두리 밖에서 깜빡이는 효과용 컨트롤러
-  late final AnimationController
-      _rotationController; // 충전 중일 때 원형이 회전하는 컨트롤러
+  late final AnimationController _glowController;     // 테두리 밖에서 깜빡이는 효과용 컨트롤러
+  late final AnimationController _rotationController; // 충전 중일 때 원형이 회전하는 컨트롤러
 
   @override
   void initState() {
@@ -446,8 +443,8 @@ class _CircularBatteryState extends State<_CircularBattery>
 
     if (widget.charging) {
       // 충전 중이라면 두 컨트롤러 모두 동작
-      _glowController.repeat(reverse: true); // 밖으로 번지는 그라데이션
-      _rotationController.repeat(); // 원형이 빙글빙글 회전
+      _glowController.repeat(reverse: true);
+      _rotationController.repeat();
     }
   }
 
@@ -456,11 +453,9 @@ class _CircularBatteryState extends State<_CircularBattery>
     super.didUpdateWidget(oldWidget);
     // 충전 상태가 바뀔 때 애니메이션 재생 여부를 갱신
     if (widget.charging && !_glowController.isAnimating) {
-      // 충전이 시작되면 컨트롤러 재생
       _glowController.repeat(reverse: true);
       _rotationController.repeat();
     } else if (!widget.charging && _glowController.isAnimating) {
-      // 충전이 끝나면 애니메이션 정지
       _glowController.stop();
       _rotationController.stop();
     }
@@ -475,9 +470,8 @@ class _CircularBatteryState extends State<_CircularBattery>
 
   @override
   Widget build(BuildContext context) {
-    // 애니메이션 값(0~1)을 이용해 그라데이션 투명도를 조절한다.
-    // 기존보다 더 강한 색감을 주기 위해 기본 투명도를 높이고 범위를 넓힌다.
-    final glow = 0.3 + _glowController.value * 0.5; // 0.3~0.8 범위의 투명도
+    // 애니메이션 값(0~1)을 이용해 바깥 Glow 투명도 조절
+    final glow = 0.3 + _glowController.value * 0.5; // 0.3~0.8 범위
 
     return SizedBox(
       width: _CircularBattery._gaugeSize,
@@ -486,29 +480,25 @@ class _CircularBatteryState extends State<_CircularBattery>
         alignment: Alignment.center,
         children: [
           if (widget.charging)
-            // 주황색 외곽선이 밖으로 번지는 효과
-            // (배터리 원형의 테두리에서 밖으로 퍼져 나가는 느낌을 구현)
+          // BoxShadow로 밖으로 퍼지는 Glow 효과
             Container(
-              // 원보다 여유 있게 크게 만들어 밖으로 퍼지는 빛을 표시
-              width: _CircularBattery._gaugeSize + 40,
-              height: _CircularBattery._gaugeSize + 40,
+              width: _CircularBattery._gaugeSize,
+              height: _CircularBattery._gaugeSize,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  // 중심은 투명, 0.8 지점부터 진한 주황색이 나타나도록 설정
-                  colors: [
-                    Colors.transparent,
-                    Colors.orangeAccent.withOpacity(glow), // 더 진한 색으로 강조
-                    Colors.transparent,
-                  ],
-                  // 원형 테두리에서 색이 시작돼 바깥으로 사라지도록 중간 지점을 지정
-                  stops: const [0.8, 0.9, 1.0],
-                ),
+                color: Colors.transparent,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.orangeAccent.withOpacity(glow),
+                    blurRadius: 40,   // 얼마나 부드럽게 퍼질지
+                    spreadRadius: 8,  // 두께
+                  ),
+                ],
               ),
             ),
           // 원형 자체를 회전시키기 위해 RotationTransition 사용
           RotationTransition(
-            turns: _rotationController, // 0~1 범위의 회전 값
+            turns: _rotationController,
             child: Stack(
               alignment: Alignment.center,
               children: [
@@ -527,7 +517,7 @@ class _CircularBatteryState extends State<_CircularBattery>
                       _CircularBattery._gaugeSize),
                   painter: _CirclePainter(
                     progress: widget.percent,
-                    color: Colors.transparent, // 그라데이션 사용 시 기본 색상은 사용하지 않음
+                    color: Colors.transparent,
                     gradientColors: const [
                       Color(0xFF4D5EF5), // 파란색 계열 시작 색
                       Color(0xFF9B51E0), // 보라색 계열 끝 색
@@ -540,34 +530,33 @@ class _CircularBatteryState extends State<_CircularBattery>
           // 중앙 퍼센트와 충전 중임을 나타내는 번개 이모지 표시
           widget.charging
               ? Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // 번개 이모지: 퍼센트 글자보다 살짝 작은 크기(32)로 표시
-                    const Text('⚡', style: TextStyle(fontSize: 32)),
-                    Text(
-                      // 배터리 퍼센트를 정수로 변환하여 표시
-                      '${(widget.percent * 100).toStringAsFixed(0)}%',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w500,
-                        fontSize: 40,
-                        letterSpacing: 2,
-                      ),
-                    ),
-                  ],
-                )
-              : Text(
-                  '${(widget.percent * 100).toStringAsFixed(0)}%',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w500,
-                    fontSize: 40,
-                    letterSpacing: 2,
-                  ),
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('⚡', style: TextStyle(fontSize: 32)),
+              Text(
+                '${(widget.percent * 100).toStringAsFixed(0)}%',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w500,
+                  fontSize: 40,
+                  letterSpacing: 2,
                 ),
+              ),
+            ],
+          )
+              : Text(
+            '${(widget.percent * 100).toStringAsFixed(0)}%',
+            style: const TextStyle(
+              fontWeight: FontWeight.w500,
+              fontSize: 40,
+              letterSpacing: 2,
+            ),
+          ),
         ],
       ),
     );
   }
 }
+
 
 /// 일정 목록을 보여주는 위젯
 /// 디자인 시안과 유사한 형태로 이벤트를 표시하는 타일
