@@ -428,17 +428,26 @@ class _CircularBattery extends StatefulWidget {
 }
 
 class _CircularBatteryState extends State<_CircularBattery>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
+    with TickerProviderStateMixin {
+  late final AnimationController
+      _glowController; // 테두리 밖에서 깜빡이는 효과용 컨트롤러
+  late final AnimationController
+      _rotationController; // 충전 중일 때 원형이 회전하는 컨트롤러
 
   @override
   void initState() {
     super.initState();
     // 2초 주기로 서서히 밝아졌다가 어두워지는 애니메이션 컨트롤러
-    _controller =
+    _glowController =
         AnimationController(vsync: this, duration: const Duration(seconds: 2));
+    // 6초 주기로 천천히 회전하는 애니메이션 컨트롤러
+    _rotationController =
+        AnimationController(vsync: this, duration: const Duration(seconds: 6));
+
     if (widget.charging) {
-      _controller.repeat(reverse: true); // 충전 중일 때만 반복 재생
+      // 충전 중이라면 두 컨트롤러 모두 동작
+      _glowController.repeat(reverse: true); // 밖으로 번지는 그라데이션
+      _rotationController.repeat(); // 원형이 빙글빙글 회전
     }
   }
 
@@ -446,23 +455,28 @@ class _CircularBatteryState extends State<_CircularBattery>
   void didUpdateWidget(covariant _CircularBattery oldWidget) {
     super.didUpdateWidget(oldWidget);
     // 충전 상태가 바뀔 때 애니메이션 재생 여부를 갱신
-    if (widget.charging && !_controller.isAnimating) {
-      _controller.repeat(reverse: true);
-    } else if (!widget.charging && _controller.isAnimating) {
-      _controller.stop();
+    if (widget.charging && !_glowController.isAnimating) {
+      // 충전이 시작되면 컨트롤러 재생
+      _glowController.repeat(reverse: true);
+      _rotationController.repeat();
+    } else if (!widget.charging && _glowController.isAnimating) {
+      // 충전이 끝나면 애니메이션 정지
+      _glowController.stop();
+      _rotationController.stop();
     }
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _glowController.dispose();
+    _rotationController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     // 애니메이션 값(0~1)을 이용해 그라데이션 투명도를 조절한다.
-    final glow = 0.2 + _controller.value * 0.3; // 0.2~0.5 범위의 투명도
+    final glow = 0.2 + _glowController.value * 0.3; // 0.2~0.5 범위의 투명도
 
     return SizedBox(
       width: _CircularBattery._gaugeSize,
@@ -490,22 +504,35 @@ class _CircularBatteryState extends State<_CircularBattery>
                 ),
               ),
             ),
-          // 연한 배경 원 (전체 100%)
-          CustomPaint(
-            size: const Size(
-                _CircularBattery._gaugeSize, _CircularBattery._gaugeSize),
-            painter: _CirclePainter(
-              progress: 1,
-              color: const Color(0xFFEAE6FF), // 옅은 보라색
-            ),
-          ),
-          // 실제 퍼센트만큼 채워지는 보라색 원호
-          CustomPaint(
-            size: const Size(
-                _CircularBattery._gaugeSize, _CircularBattery._gaugeSize),
-            painter: _CirclePainter(
-              progress: widget.percent,
-              color: const Color(0xFF9B51E0), // 진한 보라색
+          // 원형 자체를 회전시키기 위해 RotationTransition 사용
+          RotationTransition(
+            turns: _rotationController, // 0~1 범위의 회전 값
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                // 연한 배경 원 (전체 100%)
+                CustomPaint(
+                  size: const Size(_CircularBattery._gaugeSize,
+                      _CircularBattery._gaugeSize),
+                  painter: _CirclePainter(
+                    progress: 1,
+                    color: const Color(0xFFEAE6FF), // 옅은 보라색
+                  ),
+                ),
+                // 실제 퍼센트만큼 채워지는 그라데이션 원호
+                CustomPaint(
+                  size: const Size(_CircularBattery._gaugeSize,
+                      _CircularBattery._gaugeSize),
+                  painter: _CirclePainter(
+                    progress: widget.percent,
+                    color: Colors.transparent, // 그라데이션 사용 시 기본 색상은 사용하지 않음
+                    gradientColors: const [
+                      Color(0xFF4D5EF5), // 파란색 계열 시작 색
+                      Color(0xFF9B51E0), // 보라색 계열 끝 색
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
           // 중앙 퍼센트와 충전 중임을 나타내는 번개 이모지 표시
@@ -690,9 +717,11 @@ class _TagChip extends StatelessWidget {
 /// 원형 진행률을 그려주는 커스텀 페인터
 class _CirclePainter extends CustomPainter {
   final double progress; // 0~1 사이 진행률
-  final Color color; // 선 색상
+  final Color color; // 단색으로 칠할 때 사용되는 색상
+  final List<Color>? gradientColors; // 그라데이션을 적용할 경우 색상 목록
 
-  _CirclePainter({required this.progress, required this.color});
+  _CirclePainter(
+      {required this.progress, required this.color, this.gradientColors});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -702,14 +731,27 @@ class _CirclePainter extends CustomPainter {
     final radius = min(size.width, size.height) / 2 - strokeWidth / 2;
 
     final paint = Paint()
-      ..color = color
       ..style = PaintingStyle.stroke
       ..strokeWidth = strokeWidth
       ..strokeCap = StrokeCap.round; // 끝을 둥글게 처리
 
+    final rect = Rect.fromCircle(center: center, radius: radius);
+
+    if (gradientColors != null) {
+      // 그라데이션 색상 목록이 주어졌다면 SweepGradient 사용
+      paint.shader = SweepGradient(
+        startAngle: -pi / 2, // 12시 방향부터 시작
+        endAngle: -pi / 2 + 2 * pi * progress, // 진행률만큼만 색상을 채움
+        colors: gradientColors!,
+      ).createShader(rect);
+    } else {
+      // 단색으로 표시
+      paint.color = color;
+    }
+
     // -pi/2 부터 시작해서 progress 비율만큼 그린다 (12시 방향 기준)
     canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius),
+      rect,
       -pi / 2,
       2 * pi * progress,
       false,
@@ -720,7 +762,9 @@ class _CirclePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _CirclePainter oldDelegate) {
     // progress 또는 color가 변경되면 다시 그린다
-    return oldDelegate.progress != progress || oldDelegate.color != color;
+    return oldDelegate.progress != progress ||
+        oldDelegate.color != color ||
+        oldDelegate.gradientColors != gradientColors;
   }
 }
 
