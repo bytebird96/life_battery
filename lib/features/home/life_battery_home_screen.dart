@@ -166,14 +166,25 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
           duration: duration,
         );
 
+    // ------------------------------
+    // 알림 관련 처리는 플랫폼에 따라 실패할 수 있다.
+    // 예를 들어 웹이나 테스트 환경에서는 플러그인이 동작하지 않아
+    // 예외가 발생할 수 있으므로 try/catch로 감싸 안전하게 처리한다.
+    // ------------------------------
     final notif = ref.read(notificationProvider);
-    await notif.cancel(e.id.hashCode);
-    await notif.scheduleComplete(
-      id: e.id.hashCode,
-      title: '일정 완료',
-      body: '${e.title}이(가) 완료되었습니다',
-      after: duration,
-    );
+    try {
+      await notif.cancel(e.id.hashCode); // 기존 예약 알림 취소
+      await notif.scheduleComplete(
+        id: e.id.hashCode,
+        title: '일정 완료',
+        body: '${e.title}이(가) 완료되었습니다',
+        after: duration,
+      );
+    } catch (e) {
+      // 알림 예약이 실패해도 작업 진행에는 문제가 없으므로
+      // 콘솔에만 오류를 표시하고 무시한다.
+      debugPrint('알림 예약 실패: $e');
+    }
 
     _remainMap[e.id] = duration;
     await _saveRunningTask(id: e.id, rate: e.ratePerHour ?? 0, duration: duration);
@@ -199,8 +210,14 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
     ref.read(batteryControllerProvider.notifier).stop();
     _countdown?.cancel();
 
+    // 작업 중지 시에도 예약된 알림이 있다면 취소해야 한다.
+    // 플러그인 미설치 등의 이유로 실패할 수 있으므로 역시 예외를 무시한다.
     if (!completed && _runningId != null) {
-      await ref.read(notificationProvider).cancel(_runningId!.hashCode);
+      try {
+        await ref.read(notificationProvider).cancel(_runningId!.hashCode);
+      } catch (e) {
+        debugPrint('알림 취소 실패: $e');
+      }
     }
 
     setState(() {
