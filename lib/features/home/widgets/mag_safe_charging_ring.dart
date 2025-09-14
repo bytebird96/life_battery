@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'charging_ring.dart';
 import 'mag_safe_aura.dart';
+import 'ring_geometry.dart';
 
 class MagSafeChargingRing extends StatelessWidget {
   final double percent;    // 0~1
@@ -21,6 +22,8 @@ class MagSafeChargingRing extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = percent.clamp(0.0, 1.0);
+    // 한 번 계산한 링 지오메트리를 두 painter에 공유하여 좌표계를 통일
+    final ring = RingGeometry(size, thickness);
 
     // 중앙 콘텐츠 구성
     final Widget? center = charging
@@ -53,16 +56,14 @@ class MagSafeChargingRing extends StatelessWidget {
         if (charging)
           IgnorePointer(
             child: MagSafeAura(
-              size: size,
-              thickness: thickness,
+              ring: ring,
               glowColor: const Color(0x9934C759),
               highlight: const Color(0xFF34C759),
             ),
           ),
         ChargingRing(
           percent: p,
-          size: size,
-          thickness: thickness,
+          ring: ring,
           labelFont: labelFont,
           center: center, // 중앙은 여기서만 그린다 (중복 X)
 

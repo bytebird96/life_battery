@@ -1,12 +1,15 @@
 // lib/ui/widgets/charging_ring.dart
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'ring_geometry.dart';
 
 /// 배터리 잔량 원형 링 (안쪽은 비어있음)
 class ChargingRing extends StatelessWidget {
   final double percent;      // 0~1
-  final double size;         // 지름
-  final double thickness;    // 두께
+
+  /// 공통 링 지오메트리 (크기와 두께 포함)
+  final RingGeometry ring;
+
   final double labelFont;    // 기본 퍼센트 폰트 (center가 없을 때만 사용)
 
   /// 중앙에 그릴 위젯 (제공되면 내부 기본 텍스트는 그리지 않음)
@@ -20,8 +23,7 @@ class ChargingRing extends StatelessWidget {
   const ChargingRing({
     super.key,
     required this.percent,
-    required this.size,
-    required this.thickness,
+    required this.ring,
     required this.labelFont,
     this.center,
     this.trackColor = const Color(0xFFE9E8FF),
@@ -34,12 +36,12 @@ class ChargingRing extends StatelessWidget {
     final p = percent.clamp(0.0, 1.0);
 
     return SizedBox(
-      width: size,
-      height: size,
+      width: ring.size,
+      height: ring.size,
       child: CustomPaint(
         painter: _RingPainter(
           percent: p,
-          thickness: thickness,
+          ring: ring,
           trackColor: trackColor,
           start: progressStart,
           end: progressEnd,
@@ -63,14 +65,14 @@ class ChargingRing extends StatelessWidget {
 
 class _RingPainter extends CustomPainter {
   final double percent;
-  final double thickness;
+  final RingGeometry ring;
   final Color trackColor;
   final Color start;
   final Color end;
 
   _RingPainter({
     required this.percent,
-    required this.thickness,
+    required this.ring,
     required this.trackColor,
     required this.start,
     required this.end,
@@ -78,14 +80,13 @@ class _RingPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final c = Offset(size.width / 2, size.height / 2);
-    final r = (math.min(size.width, size.height) - thickness) / 2;
-    final rect = Rect.fromCircle(center: c, radius: r);
+    // 전달받은 링 지오메트리에서 rect를 직접 사용
+    final rect = ring.rect;
 
     // 트랙
     final track = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = thickness
+      ..strokeWidth = ring.thickness
       ..strokeCap = StrokeCap.round
       ..color = trackColor;
     canvas.drawArc(rect, 0, math.pi * 2, false, track);
@@ -101,7 +102,7 @@ class _RingPainter extends CustomPainter {
 
       final prog = Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = thickness
+        ..strokeWidth = ring.thickness
         ..strokeCap = StrokeCap.round
         ..shader = shader;
 
@@ -112,8 +113,9 @@ class _RingPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _RingPainter o) =>
       o.percent != percent ||
-          o.thickness != thickness ||
-          o.trackColor != trackColor ||
-          o.start != start ||
-          o.end != end;
+      o.ring.size != ring.size ||
+      o.ring.thickness != ring.thickness ||
+      o.trackColor != trackColor ||
+      o.start != start ||
+      o.end != end;
 }
