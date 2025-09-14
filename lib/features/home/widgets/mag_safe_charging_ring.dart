@@ -3,11 +3,11 @@ import 'charging_ring.dart';
 import 'mag_safe_aura.dart';
 
 class MagSafeChargingRing extends StatelessWidget {
-  final double percent;
-  final bool charging;
-  final double size;
-  final double thickness;
-  final double labelFont;
+  final double percent;    // 0~1
+  final bool charging;     // 충전 여부
+  final double size;       // 지름
+  final double thickness;  // 두께
+  final double labelFont;  // 기본 퍼센트 폰트(비충전시)
 
   const MagSafeChargingRing({
     super.key,
@@ -20,6 +20,32 @@ class MagSafeChargingRing extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = percent.clamp(0.0, 1.0);
+
+    // 중앙 콘텐츠 구성
+    final Widget? center = charging
+        ? Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          Icons.bolt_rounded,
+          size: size * 0.24,
+          color: const Color(0xFF34C759),
+        ),
+        SizedBox(height: size * 0.04),
+        Text(
+          '${(p * 100).round()}%',
+          // 충전 중엔 폰트 40%로 축소
+          style: TextStyle(
+            fontSize: labelFont * 0.4,
+            fontWeight: FontWeight.w700,
+            color: const Color(0xFF0B0C10),
+          ),
+        ),
+      ],
+    )
+        : null; // 비충전: ChargingRing의 기본 퍼센트 텍스트 사용
+
     return Stack(
       alignment: Alignment.center,
       clipBehavior: Clip.none,
@@ -29,16 +55,27 @@ class MagSafeChargingRing extends StatelessWidget {
             child: MagSafeAura(
               size: size,
               thickness: thickness,
-              glowColor: const Color(0xFFEFFF7A),
-              highlight: const Color(0xFF8AE66E),
+              glowColor: const Color(0x9934C759),
+              highlight: const Color(0xFF34C759),
             ),
           ),
         ChargingRing(
-          percent: percent,
-          charging: false,
+          percent: p,
           size: size,
           thickness: thickness,
           labelFont: labelFont,
+          center: center, // 중앙은 여기서만 그린다 (중복 X)
+
+          // 색상: 비충전(보라 그라데이션) / 충전(녹색 단색)
+          trackColor: charging
+              ? const Color(0xFFE6E8ED)
+              : const Color(0xFFE9E8FF),
+          progressStart: charging
+              ? const Color(0xFF34C759)
+              : const Color(0xFFC8B6FF),
+          progressEnd: charging
+              ? const Color(0xFF34C759) // start=end → 단색 효과
+              : const Color(0xFF5B2EFF),
         ),
       ],
     );
