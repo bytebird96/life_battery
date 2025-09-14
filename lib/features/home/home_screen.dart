@@ -3,7 +3,7 @@ import 'dart:convert'; // 맵을 JSON 문자열로 변환하기 위해 사용
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart'; // 간단한 로컬 저장소
-import 'widgets/charging_ring.dart'; // 배터리 링 위젯
+import 'widgets/mag_safe_charging_ring.dart'; // MagSafe 스타일 배터리 링 위젯
 import 'battery_controller.dart';
 import '../../data/repositories.dart';
 import '../../data/models.dart'; // Event 모델 사용을 위해 추가
@@ -288,8 +288,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       body: Column(
         children: [
           const SizedBox(height: 16),
-          // ChargingRing 위젯으로 배터리 상태 표시
-          ChargingRing(
+          // MagSafeChargingRing으로 배터리 상태 표시 (MagSafe 느낌)
+          MagSafeChargingRing(
             percent: battery / 100,
             charging: _taskId != null,
             size: ringSize, // 계산한 전체 크기 전달

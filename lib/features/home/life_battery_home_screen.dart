@@ -9,7 +9,7 @@ import '../../data/repositories.dart'; // 저장소
 import '../../services/notifications.dart'; // 알림
 import 'package:shared_preferences/shared_preferences.dart'; // 로컬 저장소
 import 'widgets/life_tab_bar.dart'; // 하단 탭바
-import 'widgets/charging_ring.dart'; // 커스텀 링(안쪽 비움)
+import 'widgets/mag_safe_charging_ring.dart'; // MagSafe 스타일 배터리 링
 import '../../core/scale.dart'; // s(context, px) 헬퍼
 
 /// HTML/CSS 시안을 Flutter로 이식한 홈 화면
@@ -280,13 +280,13 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
                 ),
               ),
 
-              // ------------------ 배터리 링 ------------------
+              // ------------------ 배터리 링 (MagSafe 스타일) ------------------
               Positioned(
                 top: ringTop,
                 left: 0,
                 right: 0,
                 child: Center(
-                  child: ChargingRing(
+                  child: MagSafeChargingRing(
                     percent: percent,
                     charging: _runningRate > 0,
                     size: ringSize,
