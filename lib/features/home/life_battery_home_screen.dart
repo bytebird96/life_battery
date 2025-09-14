@@ -255,14 +255,16 @@ class _LifeBatteryHomeScreenState
     final listBottom = s(context, 112);
 
     // 리스트 카드 스케일
-    final iconBg = w * 0.139; // 52
-    final iconSize = iconBg * 0.46; // 24
-    final cardPadding = w * 0.043; // 16
-    final titleInCard = w * 0.043; // 16
-    final chipFs = w * 0.032; // 12
-    final timeFs = w * 0.035; // 13
-    final cardRadius = w * 0.053; // 20
-    final cardGap = w * 0.032; // 12
+    // 1. 화면에 더 많은 일정(약 4개)을 표시하기 위해 전체 크기를 전반적으로 축소한다.
+    // 2. 수치는 화면 폭을 기준으로 계산되므로 해상도에 따라 자동으로 조정된다.
+    final iconBg = w * 0.12; // 기존 52 → 약 45로 축소하여 아이콘 배경 원 크기 줄임
+    final iconSize = iconBg * 0.46; // 아이콘 자체 크기 (비율 유지)
+    final cardPadding = w * 0.035; // 기존 16 → 약 13, 카드 내부 여백 축소
+    final titleInCard = w * 0.038; // 기존 16 → 약 14, 카드 제목 폰트 축소
+    final chipFs = w * 0.028; // 기존 12 → 약 10, 태그 글자 크기 축소
+    final timeFs = w * 0.03; // 기존 13 → 약 11, 남은 시간 글자 크기 축소
+    final cardRadius = w * 0.047; // 기존 20 → 약 18, 카드 모서리 둥글기 축소
+    final cardGap = w * 0.025; // 기존 12 → 약 10, 카드와 아이콘 사이 간격 축소
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -329,8 +331,9 @@ class _LifeBatteryHomeScreenState
                       children: [
                         Text(
                           '일정',
+                          // 화면 내 요소를 더 많이 배치하기 위해 제목 글꼴 크기를 조금 줄인다.
                           style: TextStyle(
-                            fontSize: w * 0.059, // 22
+                            fontSize: w * 0.053, // 기존 22 → 약 20
                             fontWeight: FontWeight.w700,
                             color: const Color(0xFF111118),
                           ),
@@ -348,12 +351,14 @@ class _LifeBatteryHomeScreenState
                         ),
                       ],
                     ),
-                    SizedBox(height: s(context, 12)),
+                    // 카드 리스트와의 간격을 줄여 공간을 절약
+                    SizedBox(height: s(context, 8)),
                     Expanded(
                       child: ListView.separated(
                         padding: EdgeInsets.zero,
+                        // 홈 화면에서는 최대 4개의 일정만 보여주어 가독성을 유지
                         itemCount:
-                        repo.events.length > 3 ? 3 : repo.events.length,
+                            repo.events.length > 4 ? 4 : repo.events.length,
                         itemBuilder: (context, index) {
                           final e = repo.events[index];
                           final running = _runningId == e.id;
@@ -410,8 +415,9 @@ class _LifeBatteryHomeScreenState
                             ),
                           );
                         },
+                        // 각 카드 사이 간격도 줄여 더 많은 일정이 보이도록 함
                         separatorBuilder: (_, __) =>
-                            SizedBox(height: s(context, 12)),
+                            SizedBox(height: s(context, 8)),
                       ),
                     ),
                   ],
