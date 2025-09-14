@@ -12,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 // ▼▼▼ 중요: MagSafe 스타일 배터리 링 위젯 경로(너 프로젝트에 맞춰 수정) ▼▼▼
 import 'widgets/mag_safe_charging_ring.dart';
+import 'event_detail_screen.dart';
 
 import '../../core/scale.dart'; // s(context, px) 헬퍼
 
@@ -212,6 +213,73 @@ class _LifeBatteryHomeScreenState
     await _clearRunningTask();
   }
 
+  /// 남은 시간을 모두 적용하여 즉시 일정을 완료하는 함수
+  Future<void> _instantComplete(Event e) async {
+    final repo = ref.read(repositoryProvider); // 일정 저장소 접근
+    final base = e.endAt.difference(e.startAt); // 전체 일정 시간
+    // 실행 중인 일정이면 현재 남은 시간을 사용, 아니면 저장된 남은 시간 사용
+    final remain = _runningId == e.id ? _remain : (_remainMap[e.id] ?? base);
+
+    // 진행 중이었다면 타이머를 중지하고 상태를 정리
+    if (_runningId == e.id) {
+      await _stopEvent(completed: true);
+    }
+
+    // 남은 시간만큼의 배터리 변화량 계산 및 적용
+    final delta = _rateFor(e, repo) * remain.inSeconds / 3600;
+    var battery = ref.read(batteryControllerProvider);
+    battery += delta;
+    battery = battery.clamp(0, 100); // 0~100 범위로 제한
+    ref.read(batteryControllerProvider.notifier).state = battery;
+
+    // 일정은 완료 상태로 표시
+    _remainMap[e.id] = Duration.zero;
+    try {
+      await ref.read(notificationProvider).cancel(e.id.hashCode);
+    } catch (_) {}
+    await _saveRemainMap();
+    await _clearRunningTask();
+    setState(() {});
+  }
+
+  /// 일정을 중지하고 처음 상태(전체 시간)으로 되돌리는 함수
+  Future<void> _resetEvent(Event e) async {
+    final base = e.endAt.difference(e.startAt); // 초기 설정 시간
+    if (_runningId == e.id) {
+      // 실행 중이면 중지하고 배터리를 시작 당시 값으로 복구
+      await _stopEvent();
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getDouble('battery');
+      if (saved != null) {
+        ref.read(batteryControllerProvider.notifier).state = saved;
+      }
+      await _clearRunningTask();
+    }
+    _remainMap[e.id] = base; // 남은 시간을 초기값으로 설정
+    await _saveRemainMap();
+    setState(() {});
+  }
+
+  /// 일정 타일을 눌렀을 때 상세 화면으로 이동하는 함수
+  Future<void> _openDetail(Event e) async {
+    final base = e.endAt.difference(e.startAt);
+    final running = _runningId == e.id;
+    final remain = running ? _remain : (_remainMap[e.id] ?? base);
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EventDetailScreen(
+          event: e,
+          running: running,
+          remain: remain,
+          onInstantComplete: () => _instantComplete(e),
+          onReset: () => _resetEvent(e),
+        ),
+      ),
+    );
+  }
+
   double _rateFor(Event e, AppRepository repo) {
     if (e.ratePerHour != null) return e.ratePerHour!;
     switch (e.type) {
@@ -397,6 +465,7 @@ class _LifeBatteryHomeScreenState
                                   await _startEvent(e);
                                 }
                               },
+                              onTap: () => _openDetail(e),
                               iconBg: iconBg,
                               iconSize: iconSize,
                               cardPadding: cardPadding,
@@ -449,6 +518,7 @@ class _EventTile extends StatelessWidget {
   final Duration remain;
   final double rate;
   final VoidCallback onPressed;
+  final VoidCallback? onTap; // 타일 전체 탭 동작
 
   final double iconBg;
   final double iconSize;
@@ -465,6 +535,7 @@ class _EventTile extends StatelessWidget {
     required this.remain,
     required this.rate,
     required this.onPressed,
+    this.onTap,
     required this.iconBg,
     required this.iconSize,
     required this.cardPadding,
@@ -479,15 +550,16 @@ class _EventTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final typeTag =
         event.type.name[0].toUpperCase() + event.type.name.substring(1);
-
-    return Container(
-      padding: EdgeInsets.all(cardPadding),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF7F7FA),
-        borderRadius: BorderRadius.circular(cardRadius),
-      ),
-      child: Row(
-        children: [
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: EdgeInsets.all(cardPadding),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF7F7FA),
+          borderRadius: BorderRadius.circular(cardRadius),
+        ),
+        child: Row(
+          children: [
           Container(
             width: iconBg,
             height: iconBg,
