@@ -4,15 +4,15 @@ import 'dart:convert'; // JSON 변환
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'battery_controller.dart';
-import '../../data/models.dart'; // Event 모델 사용
-import '../../data/repositories.dart'; // 일정 저장소
-import '../../services/notifications.dart'; // 알림 서비스
+import '../../data/models.dart'; // Event 모델
+import '../../data/repositories.dart'; // 저장소
+import '../../services/notifications.dart'; // 알림
 import 'package:shared_preferences/shared_preferences.dart'; // 로컬 저장소
-import 'widgets/life_tab_bar.dart'; // 하단 탭바 위젯
-import 'widgets/charging_ring.dart'; // 새로 만든 충전 링 위젯
-import '../../core/scale.dart'; // 화면 스케일 헬퍼
+import 'widgets/life_tab_bar.dart'; // 하단 탭바
+import 'widgets/charging_ring.dart'; // 커스텀 링(안쪽 비움)
+import '../../core/scale.dart'; // s(context, px) 헬퍼
 
-/// HTML/CSS로 전달된 템플릿을 Flutter로 옮긴 홈 화면
+/// HTML/CSS 시안을 Flutter로 이식한 홈 화면
 class LifeBatteryHomeScreen extends ConsumerStatefulWidget {
   const LifeBatteryHomeScreen({super.key});
   @override
@@ -48,7 +48,11 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
     await prefs.setString('remainMap', jsonEncode(map));
   }
 
-  Future<void> _saveRunningTask({required String id, required double rate, required Duration duration}) async {
+  Future<void> _saveRunningTask({
+    required String id,
+    required double rate,
+    required Duration duration,
+  }) async {
     final prefs = await SharedPreferences.getInstance();
     final battery = ref.read(batteryControllerProvider);
     await prefs.setDouble('battery', battery);
@@ -227,20 +231,38 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
       backgroundColor: Colors.white,
       body: Builder(
         builder: (context) {
-          // 스케일 변수
-          final titleTop = s(context, 56);
-          final ringTop = s(context, 108);
-          final ringSize = s(context, 220);
-          final ringThick = s(context, 16);
-          final percentFs = s(context, 36);
-          final sectionTop = s(context, 320);
-          final pageSide = s(context, 20);
-          final listBottom = s(context, 100);
+          // ====== 시안 비율 고정 파라미터(화면 폭 기준) ======
+          final screenW = MediaQuery.of(context).size.width;
+
+          // 링: 화면 폭의 ~46%, 두께: 링의 ~8.5%, 퍼센트 폰트: 링의 ~18%
+          final ringSize   = screenW * 0.46;
+          final ringThick  = ringSize * 0.085;
+          final percentFs  = ringSize * 0.18;
+
+          // 제목 폰트: 폭의 ~7.4% (375px 기준 ≈ 27.8px)
+          final titleFs    = screenW * 0.074;
+
+          // 상하 간격(시안 여백 반영)
+          final titleTop   = s(context, 56);
+          final ringTop    = s(context, 96);
+          final sectionTop = ringTop + ringSize + s(context, 48);
+          final pageSide   = s(context, 20);
+          final listBottom = s(context, 112);
+
+          // 리스트 카드 스케일(시안 375 기준 수치 환산)
+          final iconBg      = screenW * 0.139; // 52
+          final iconSize    = iconBg * 0.46;   // 24
+          final cardPadding = screenW * 0.043; // 16
+          final titleInCard = screenW * 0.043; // 16
+          final chipFs      = screenW * 0.032; // 12
+          final timeFs      = screenW * 0.035; // 13
+          final cardRadius  = screenW * 0.053; // 20
+          final cardGap     = screenW * 0.032; // 12
 
           return Stack(
             clipBehavior: Clip.none,
             children: [
-              // 제목
+              // ------------------ 제목 ------------------
               Positioned(
                 top: titleTop,
                 left: 0,
@@ -251,14 +273,14 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
                     style: TextStyle(
                       fontWeight: FontWeight.w700,
                       color: const Color(0xFF111118),
-                      fontSize: s(context, 28),
+                      fontSize: titleFs,
                       height: 1.1,
                     ),
                   ),
                 ),
               ),
 
-              // 배터리 링
+              // ------------------ 배터리 링 ------------------
               Positioned(
                 top: ringTop,
                 left: 0,
@@ -274,7 +296,7 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
                 ),
               ),
 
-              // 리스트 섹션
+              // ------------------ 리스트 섹션 ------------------
               Positioned(
                 top: sectionTop,
                 left: pageSide,
@@ -286,7 +308,7 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
                     Text(
                       'Today',
                       style: TextStyle(
-                        fontSize: s(context, 14),
+                        fontSize: screenW * 0.037, // 14
                         color: const Color(0xFFB0B2C0),
                         fontWeight: FontWeight.w600,
                       ),
@@ -298,7 +320,7 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
                         Text(
                           '일정',
                           style: TextStyle(
-                            fontSize: s(context, 22),
+                            fontSize: screenW * 0.059, // 22
                             fontWeight: FontWeight.w700,
                             color: const Color(0xFF111118),
                           ),
@@ -308,7 +330,7 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
                           child: Text(
                             'See All',
                             style: TextStyle(
-                              fontSize: s(context, 14),
+                              fontSize: screenW * 0.037, // 14
                               color: const Color(0xFF9FA2B2),
                               fontWeight: FontWeight.w600,
                             ),
@@ -360,14 +382,14 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
                                   await _startEvent(e);
                                 }
                               },
-                              iconBg: s(context, 52),
-                              iconSize: s(context, 24),
-                              cardPadding: s(context, 16),
-                              titleFs: s(context, 16),
-                              chipFs: s(context, 12),
-                              timeFs: s(context, 13),
-                              cardRadius: s(context, 20),
-                              cardGap: s(context, 12),
+                              iconBg: iconBg,
+                              iconSize: iconSize,
+                              cardPadding: cardPadding,
+                              titleFs: titleInCard,
+                              chipFs: chipFs,
+                              timeFs: timeFs,
+                              cardRadius: cardRadius,
+                              cardGap: cardGap,
                             ),
                           );
                         },
@@ -378,7 +400,7 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
                 ),
               ),
 
-              // 하단 탭바
+              // ------------------ 하단 탭바 ------------------
               Positioned(
                 left: s(context, 40),
                 right: s(context, 40),
@@ -498,7 +520,7 @@ class _EventTile extends StatelessWidget {
                       vp: s(context, 4),
                       radius: s(context, 8),
                     ),
-                    SizedBox(width: s(context, 6)),
+                    SizedBox(height: 0, width: s(context, 6)),
                     if (event.content != null && event.content!.isNotEmpty)
                       _TagChip(
                         text: event.content!,
