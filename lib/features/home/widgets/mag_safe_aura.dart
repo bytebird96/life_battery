@@ -33,28 +33,35 @@ class MagSafeAura extends StatelessWidget {
     final sigma = ring.thickness * 0.9;       // 블러 강도
     final size = ring.size;                   // 링의 지름
 
+    // 위젯 전체 크기를 링 지름으로 고정하여
+    // 충전 전/중에 위치가 달라지지 않도록 한다.
     return IgnorePointer(
-      child: Stack(
-        alignment: Alignment.center,
-        clipBehavior: Clip.none,
-        children: [
-          // ★ 외곽에만 퍼지는 글로우 스트로크 (안쪽은 절대 채우지 않음)
-          CustomPaint(
-            // 블러가 바깥으로 퍼지므로 캔버스를 두께만큼 키워서 잘림을 방지한다.
-            size: Size.square(size + glowWidth * 2),
-            painter: _OuterGlowPainter(
-              // 확대된 캔버스에서 링의 위치를 옮겨 그린다.
-              rect: ring.rect.shift(Offset(glowWidth, glowWidth)),
-              strokeWidth: glowWidth,
-              color: glowColor.withOpacity(0.85),
-              sigma: sigma,
+      child: SizedBox.square(
+        dimension: size,
+        child: Stack(
+          alignment: Alignment.center,
+          clipBehavior: Clip.none, // 글로우가 바깥으로 퍼져도 잘리지 않도록 함
+          children: [
+            // ★ 외곽으로만 퍼지는 글로우 스트로크
+            CustomPaint(
+              // 캔버스 크기를 링 지름으로 유지하여 위치를 통일한다.
+              size: Size.square(size),
+              painter: _OuterGlowPainter(
+                // ring.rect를 그대로 사용하여 ChargingRing과 동일한 좌표계를 공유
+                rect: ring.rect,
+                strokeWidth: glowWidth,
+                color: glowColor.withOpacity(0.85),
+                sigma: sigma,
+              ),
             ),
-          ),
-          if (showBolt)
-            Icon(Icons.bolt_rounded,
+            if (showBolt)
+              Icon(
+                Icons.bolt_rounded,
                 size: boltSize,
-                color: glowColor.withOpacity(0.9)),
-        ],
+                color: glowColor.withOpacity(0.9),
+              ),
+          ],
+        ),
       ),
     );
   }

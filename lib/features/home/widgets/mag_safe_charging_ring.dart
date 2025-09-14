@@ -49,38 +49,43 @@ class MagSafeChargingRing extends StatelessWidget {
     )
         : null; // 비충전: ChargingRing의 기본 퍼센트 텍스트 사용
 
-    return Stack(
-      alignment: Alignment.center,
-      clipBehavior: Clip.none,
-      children: [
-        if (charging)
-          IgnorePointer(
-            child: MagSafeAura(
-              ring: ring,
-              glowColor: const Color(0x9934C759),
-              highlight: const Color(0xFF34C759),
-              // MagSafeAura에서 번개 아이콘을 숨겨 중복되는 표시를 방지
-              showBolt: false,
+    // Stack을 고정 크기 박스로 감싸 충전 여부와 상관없이
+    // 위치가 변하지 않도록 한다.
+    return SizedBox.square(
+      dimension: size,
+      child: Stack(
+        alignment: Alignment.center,
+        clipBehavior: Clip.none,
+        children: [
+          if (charging)
+            IgnorePointer(
+              child: MagSafeAura(
+                ring: ring,
+                glowColor: const Color(0x9934C759),
+                highlight: const Color(0xFF34C759),
+                // MagSafeAura에서 번개 아이콘을 숨겨 중복되는 표시를 방지
+                showBolt: false,
+              ),
             ),
-          ),
-        ChargingRing(
-          percent: p,
-          ring: ring,
-          labelFont: labelFont,
-          center: center, // 중앙은 여기서만 그린다 (중복 X)
+          ChargingRing(
+            percent: p,
+            ring: ring,
+            labelFont: labelFont,
+            center: center, // 중앙은 여기서만 그린다 (중복 X)
 
-          // 색상: 비충전(보라 그라데이션) / 충전(녹색 단색)
-          trackColor: charging
-              ? const Color(0xFFE6E8ED)
-              : const Color(0xFFE9E8FF),
-          progressStart: charging
-              ? const Color(0xFF34C759)
-              : const Color(0xFFC8B6FF),
-          progressEnd: charging
-              ? const Color(0xFF34C759) // start=end → 단색 효과
-              : const Color(0xFF5B2EFF),
-        ),
-      ],
+            // 색상: 비충전(보라 그라데이션) / 충전(녹색 단색)
+            trackColor: charging
+                ? const Color(0xFFE6E8ED)
+                : const Color(0xFFE9E8FF),
+            progressStart: charging
+                ? const Color(0xFF34C759)
+                : const Color(0xFFC8B6FF),
+            progressEnd: charging
+                ? const Color(0xFF34C759) // start=end → 단색 효과
+                : const Color(0xFF5B2EFF),
+          ),
+        ],
+      ),
     );
   }
 }
