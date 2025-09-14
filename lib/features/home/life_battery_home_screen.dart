@@ -14,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'widgets/mag_safe_charging_ring.dart';
 
 import '../../core/scale.dart'; // s(context, px) 헬퍼
+import '../../core/time.dart'; // 오늘 날짜 계산을 위한 헬퍼 함수
 
 /// HTML/CSS 시안을 Flutter로 이식한 홈 화면
 class LifeBatteryHomeScreen extends ConsumerStatefulWidget {
@@ -232,8 +233,16 @@ class _LifeBatteryHomeScreenState
     final percent = ref.watch(batteryControllerProvider) / 100;
     final repo = ref.watch(repositoryProvider);
 
-    for (final e in repo.events) {
-      _remainMap.putIfAbsent(e.id, () => e.endAt.difference(e.startAt));
+    // 오늘 시작 시각과 끝 시각을 계산하여 오늘 일정만 추출
+    final todayStartTime = todayStart(DateTime.now(), repo.settings.dayStart);
+    final todayEndTime = todayStartTime.add(const Duration(days: 1));
+    final todayEvents =
+        repo.eventsInRange(todayStartTime, todayEndTime); // 오늘 일정 목록
+
+    // 남은 시간 정보를 맵에 저장(처음 한 번만)
+    for (final e in todayEvents) {
+      _remainMap.putIfAbsent(
+          e.id, () => e.endAt.difference(e.startAt)); // 기본 남은 시간 등록
     }
 
     // ====== 시안 비율(가로 기준) ======
@@ -352,10 +361,11 @@ class _LifeBatteryHomeScreenState
                     Expanded(
                       child: ListView.separated(
                         padding: EdgeInsets.zero,
-                        itemCount:
-                        repo.events.length > 3 ? 3 : repo.events.length,
+                        itemCount: todayEvents.length > 3
+                            ? 3
+                            : todayEvents.length, // 최대 3개까지 표시
                         itemBuilder: (context, index) {
-                          final e = repo.events[index];
+                          final e = todayEvents[index]; // 오늘 일정만 사용
                           final running = _runningId == e.id;
                           final base = e.endAt.difference(e.startAt);
                           final remain =

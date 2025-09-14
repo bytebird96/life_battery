@@ -28,7 +28,8 @@ class AppRepository {
         prefs.getDouble('battery') ?? settings.initialBattery;
 
     // DB에 저장된 이벤트 목록을 모두 불러온다.
-    final result = await _db.customSelect('SELECT * FROM events').get();
+    final result =
+        await _db.customSelect('SELECT * FROM events').get(); // 모든 일정 조회
     events = result
         .map((row) => Event(
               id: row.data['id'] as String,
@@ -47,6 +48,9 @@ class AppRepository {
                   row.data['updated_at'] as int),
             ))
         .toList();
+
+    // 시작 시각 기준으로 일정들을 정렬하여 화면에 일정이 섞여 보이지 않도록 한다.
+    events.sort((a, b) => a.startAt.compareTo(b.startAt));
 
     // 저장된 이벤트가 하나도 없다면 더미 데이터를 추가하고 DB에도 저장한다.
     if (events.isEmpty) {
@@ -73,6 +77,8 @@ class AppRepository {
     // 새 일정으로 대체하여 메모리 목록을 최신 상태로 유지
     events.removeWhere((ex) => ex.id == e.id);
     events.add(e);
+    // 새 일정 추가 후 시작 시각 기준으로 다시 정렬
+    events.sort((a, b) => a.startAt.compareTo(b.startAt));
 
     // customInsert는 null 값을 허용하지 않으므로
     // null 이 될 수 있는 ratePerHour를 다루기 위해 customStatement로 변경한다.
