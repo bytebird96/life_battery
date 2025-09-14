@@ -1,31 +1,38 @@
-import 'dart:async'; // Timer 사용
-import 'dart:convert'; // JSON 변환
+import 'dart:async';
+import 'dart:convert';
 
+import 'package:energy_battery/features/home/widgets/life_tab_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'battery_controller.dart';
-import '../../data/models.dart'; // Event 모델
-import '../../data/repositories.dart'; // 저장소
-import '../../services/notifications.dart'; // 알림
-import 'package:shared_preferences/shared_preferences.dart'; // 로컬 저장소
-import 'widgets/life_tab_bar.dart'; // 하단 탭바
-import 'widgets/mag_safe_charging_ring.dart'; // MagSafe 스타일 배터리 링
+import '../../data/models.dart';
+import '../../data/repositories.dart';
+import '../../services/notifications.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+// ▼▼▼ 중요: MagSafe 스타일 배터리 링 위젯 경로(너 프로젝트에 맞춰 수정) ▼▼▼
+import 'widgets/mag_safe_charging_ring.dart';
+
 import '../../core/scale.dart'; // s(context, px) 헬퍼
 
 /// HTML/CSS 시안을 Flutter로 이식한 홈 화면
 class LifeBatteryHomeScreen extends ConsumerStatefulWidget {
   const LifeBatteryHomeScreen({super.key});
+
   @override
-  ConsumerState<LifeBatteryHomeScreen> createState() => _LifeBatteryHomeScreenState();
+  ConsumerState<LifeBatteryHomeScreen> createState() =>
+      _LifeBatteryHomeScreenState();
 }
 
-class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
+class _LifeBatteryHomeScreenState
+    extends ConsumerState<LifeBatteryHomeScreen> {
   String? _runningId;
   Duration _remain = Duration.zero;
   double _runningRate = 0;
   final Map<String, Duration> _remainMap = {};
   Timer? _countdown;
 
+  // ------------------------------ 상태 복원/저장 ------------------------------
   @override
   void initState() {
     super.initState();
@@ -95,7 +102,8 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
       final durationSec = prefs.getInt('duration') ?? 0;
       final startMillis = prefs.getInt('startTime') ?? 0;
 
-      final elapsed = DateTime.now().millisecondsSinceEpoch ~/ 1000 - startMillis ~/ 1000;
+      final elapsed = DateTime.now().millisecondsSinceEpoch ~/ 1000 -
+          startMillis ~/ 1000;
       final usedSec = elapsed > durationSec ? durationSec : elapsed;
 
       final perSecond = rate / 3600;
@@ -130,6 +138,7 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
     setState(() {});
   }
 
+  // ------------------------------ 일정 제어 ------------------------------
   Future<void> _startEvent(Event e) async {
     var duration = _remainMap[e.id] ?? e.endAt.difference(e.startAt);
     if (duration == Duration.zero) {
@@ -160,7 +169,8 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
     }
 
     _remainMap[e.id] = duration;
-    await _saveRunningTask(id: e.id, rate: e.ratePerHour ?? 0, duration: duration);
+    await _saveRunningTask(
+        id: e.id, rate: e.ratePerHour ?? 0, duration: duration);
 
     _countdown?.cancel();
     setState(() {
@@ -168,13 +178,11 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
       _remain = duration;
       _runningRate = e.ratePerHour ?? 0;
     });
-    _countdown = Timer.periodic(const Duration(seconds: 1), (timer) {
+    _countdown = Timer.periodic(const Duration(seconds: 1), (_) {
       if (_remain.inSeconds <= 1) {
         _stopEvent(completed: true);
       } else {
-        setState(() {
-          _remain -= const Duration(seconds: 1);
-        });
+        setState(() => _remain -= const Duration(seconds: 1));
       }
     });
   }
@@ -193,7 +201,8 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
 
     setState(() {
       if (_runningId != null) {
-        _remainMap[_runningId!] = _remain.inSeconds <= 1 ? Duration.zero : _remain;
+        _remainMap[_runningId!] =
+        _remain.inSeconds <= 1 ? Duration.zero : _remain;
       }
       _runningId = null;
       _runningRate = 0;
@@ -227,40 +236,41 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
       _remainMap.putIfAbsent(e.id, () => e.endAt.difference(e.startAt));
     }
 
+    // ====== 시안 비율(가로 기준) ======
+    final w = MediaQuery.of(context).size.width;
+
+    // 링: 화면 폭의 46%, 두께: 링의 8.5%, 폰트: 링의 18%
+    final ringSize = w * 0.46;
+    final ringThick = ringSize * 0.085;
+    final labelFont = ringSize * 0.18;
+
+    // 제목 폰트: 폭의 ~7.4%
+    final titleFs = w * 0.074;
+
+    // 여백 (s(context, px)는 375 기준 px → 실제 스케일)
+    final titleTop = s(context, 56);
+    final ringTop = s(context, 96);
+    final sectionTop = ringTop + ringSize + s(context, 48);
+    final pageSide = s(context, 20);
+    final listBottom = s(context, 112);
+
+    // 리스트 카드 스케일
+    final iconBg = w * 0.139; // 52
+    final iconSize = iconBg * 0.46; // 24
+    final cardPadding = w * 0.043; // 16
+    final titleInCard = w * 0.043; // 16
+    final chipFs = w * 0.032; // 12
+    final timeFs = w * 0.035; // 13
+    final cardRadius = w * 0.053; // 20
+    final cardGap = w * 0.032; // 12
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: Builder(
         builder: (context) {
-          // ====== 시안 비율 고정 파라미터(화면 폭 기준) ======
-          final screenW = MediaQuery.of(context).size.width;
-
-          // 링: 화면 폭의 ~46%, 두께: 링의 ~8.5%, 퍼센트 폰트: 링의 ~18%
-          final ringSize   = screenW * 0.46;
-          final ringThick  = ringSize * 0.085;
-          final percentFs  = ringSize * 0.18;
-
-          // 제목 폰트: 폭의 ~7.4% (375px 기준 ≈ 27.8px)
-          final titleFs    = screenW * 0.074;
-
-          // 상하 간격(시안 여백 반영)
-          final titleTop   = s(context, 56);
-          final ringTop    = s(context, 96);
-          final sectionTop = ringTop + ringSize + s(context, 48);
-          final pageSide   = s(context, 20);
-          final listBottom = s(context, 112);
-
-          // 리스트 카드 스케일(시안 375 기준 수치 환산)
-          final iconBg      = screenW * 0.139; // 52
-          final iconSize    = iconBg * 0.46;   // 24
-          final cardPadding = screenW * 0.043; // 16
-          final titleInCard = screenW * 0.043; // 16
-          final chipFs      = screenW * 0.032; // 12
-          final timeFs      = screenW * 0.035; // 13
-          final cardRadius  = screenW * 0.053; // 20
-          final cardGap     = screenW * 0.032; // 12
-
           return Stack(
-            clipBehavior: Clip.none,
+            clipBehavior:
+            Clip.none, // ★ 오라가 바깥으로 퍼지므로 절대 자르면 안 됨
             children: [
               // ------------------ 제목 ------------------
               Positioned(
@@ -288,10 +298,10 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
                 child: Center(
                   child: MagSafeChargingRing(
                     percent: percent,
-                    charging: _runningRate > 0,
+                    charging: _runningRate > 0, // 충전 중일 때만 오라 출력
                     size: ringSize,
                     thickness: ringThick,
-                    labelFont: percentFs,
+                    labelFont: labelFont,
                   ),
                 ),
               ),
@@ -308,7 +318,7 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
                     Text(
                       'Today',
                       style: TextStyle(
-                        fontSize: screenW * 0.037, // 14
+                        fontSize: w * 0.037, // 14
                         color: const Color(0xFFB0B2C0),
                         fontWeight: FontWeight.w600,
                       ),
@@ -320,7 +330,7 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
                         Text(
                           '일정',
                           style: TextStyle(
-                            fontSize: screenW * 0.059, // 22
+                            fontSize: w * 0.059, // 22
                             fontWeight: FontWeight.w700,
                             color: const Color(0xFF111118),
                           ),
@@ -330,7 +340,7 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
                           child: Text(
                             'See All',
                             style: TextStyle(
-                              fontSize: screenW * 0.037, // 14
+                              fontSize: w * 0.037, // 14
                               color: const Color(0xFF9FA2B2),
                               fontWeight: FontWeight.w600,
                             ),
@@ -342,12 +352,14 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
                     Expanded(
                       child: ListView.separated(
                         padding: EdgeInsets.zero,
-                        itemCount: repo.events.length > 3 ? 3 : repo.events.length,
+                        itemCount:
+                        repo.events.length > 3 ? 3 : repo.events.length,
                         itemBuilder: (context, index) {
                           final e = repo.events[index];
                           final running = _runningId == e.id;
                           final base = e.endAt.difference(e.startAt);
-                          final remain = running ? _remain : _remainMap[e.id] ?? base;
+                          final remain =
+                          running ? _remain : _remainMap[e.id] ?? base;
                           final rate = _rateFor(e, repo);
 
                           return Dismissible(
@@ -357,14 +369,19 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
                               alignment: Alignment.centerRight,
                               padding: const EdgeInsets.only(right: 20),
                               color: Colors.red,
-                              child: const Icon(Icons.delete, color: Colors.white),
+                              child:
+                              const Icon(Icons.delete, color: Colors.white),
                             ),
                             onDismissed: (_) async {
                               if (running) await _stopEvent();
                               try {
-                                await ref.read(notificationProvider).cancel(e.id.hashCode);
+                                await ref
+                                    .read(notificationProvider)
+                                    .cancel(e.id.hashCode);
                               } catch (_) {}
-                              await ref.read(repositoryProvider).deleteEvent(e.id);
+                              await ref
+                                  .read(repositoryProvider)
+                                  .deleteEvent(e.id);
                               setState(() {
                                 _remainMap.remove(e.id);
                               });
@@ -393,7 +410,8 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
                             ),
                           );
                         },
-                        separatorBuilder: (_, __) => SizedBox(height: s(context, 12)),
+                        separatorBuilder: (_, __) =>
+                            SizedBox(height: s(context, 12)),
                       ),
                     ),
                   ],
@@ -420,7 +438,7 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
   }
 }
 
-/// 일정 카드
+// ===================== 일정 카드 =====================
 class _EventTile extends StatelessWidget {
   final Event event;
   final bool running;
@@ -455,7 +473,8 @@ class _EventTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final typeTag = event.type.name[0].toUpperCase() + event.type.name.substring(1);
+    final typeTag =
+        event.type.name[0].toUpperCase() + event.type.name.substring(1);
 
     return Container(
       padding: EdgeInsets.all(cardPadding),
@@ -497,12 +516,15 @@ class _EventTile extends StatelessWidget {
                       children: [
                         Text(
                           _formatDuration(remain),
-                          style: TextStyle(color: const Color(0xFF717489), fontSize: timeFs),
+                          style: TextStyle(
+                              color: const Color(0xFF717489), fontSize: timeFs),
                         ),
                         const SizedBox(width: 4),
                         Text(
                           '(${_batteryDelta(rate, remain)})',
-                          style: TextStyle(color: const Color(0xFF717489), fontSize: timeFs - 1),
+                          style: TextStyle(
+                              color: const Color(0xFF717489),
+                              fontSize: timeFs - 1),
                         ),
                       ],
                     ),
@@ -520,7 +542,7 @@ class _EventTile extends StatelessWidget {
                       vp: s(context, 4),
                       radius: s(context, 8),
                     ),
-                    SizedBox(height: 0, width: s(context, 6)),
+                    SizedBox(width: s(context, 6)),
                     if (event.content != null && event.content!.isNotEmpty)
                       _TagChip(
                         text: event.content!,
@@ -561,7 +583,7 @@ class _EventTile extends StatelessWidget {
   }
 }
 
-/// 태그 칩
+// ===================== 태그 칩 =====================
 class _TagChip extends StatelessWidget {
   final String text;
   final Color color;
