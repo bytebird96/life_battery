@@ -59,6 +59,8 @@ class MagSafeChargingRing extends StatelessWidget {
               ring: ring,
               glowColor: const Color(0x9934C759),
               highlight: const Color(0xFF34C759),
+              // MagSafeAura에서 번개 아이콘을 숨겨 중복되는 표시를 방지
+              showBolt: false,
             ),
           ),
         ChargingRing(
