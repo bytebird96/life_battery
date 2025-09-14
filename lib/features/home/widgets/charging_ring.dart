@@ -46,14 +46,15 @@ class ChargingRing extends StatelessWidget {
             // 버전에 따라 animationEnabled 옵션이 없을 수도 있다.
             // 있으면 false로 두어 떨림을 방지한다.
             // animationEnabled: false,
-            customWidths: const CustomSliderWidths(
+            // 패키지에서 const 생성자를 제공하지 않으므로 const 제거
+            customWidths: CustomSliderWidths(
               progressBarWidth: 12, // 진행 링 두께
-              trackWidth: 12,       // 배경 트랙 두께
-              handlerSize: 0,       // 손잡이 숨김
+              trackWidth: 12, // 배경 트랙 두께
+              handlerSize: 0, // 손잡이 숨김
             ),
-            customColors: const CustomSliderColors(
-              trackColor: Color(0xFFE9E8FF),
-              progressBarColors: [
+            customColors: CustomSliderColors(
+              trackColor: const Color(0xFFE9E8FF),
+              progressBarColors: const [
                 Color(0xFFC8B6FF), // 진행 링 시작 색(연보라)
                 Color(0xFF5B2EFF), // 진행 링 끝 색(보라)
               ],
@@ -80,12 +81,12 @@ class ChargingRing extends StatelessWidget {
     // 충전 중이라면 빛나는 네온 효과를 추가
     return RepaintBoundary(
       child: AvatarGlow(
-        glowColor: const Color(0xFFEFFF7A),       // 네온 색상
-        endRadius: size * 0.66,                   // 네온 최대 반경
+        glowColor: const Color(0xFFEFFF7A), // 네온 색상
         duration: const Duration(milliseconds: 1600), // 애니메이션 주기
-        repeat: true,                             // 지속 반복
-        showTwoGlows: false,                      // 보조 글로우 비활성화
-        child: ring,
+        repeat: true, // 지속 반복
+        // 패키지 3.x에서는 endRadius, showTwoGlows 파라미터가 제거되었다.
+        // 기본 값으로도 충분한 크기의 글로우가 적용된다.
+        child: ring, // 글로우 안에 배터리 링 배치
       ),
     );
   }
