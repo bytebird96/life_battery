@@ -642,6 +642,7 @@ class _EventTile extends StatelessWidget {
           ),
         ],
       ),
+          )
     );
   }
 
