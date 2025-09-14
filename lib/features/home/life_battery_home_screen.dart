@@ -247,32 +247,35 @@ class _LifeBatteryHomeScreenState
     // 제목 폰트: 폭의 ~7.4%
     final titleFs = w * 0.074;
 
+    // ★ 하단 탭바의 실제 표시 높이(작게)
+    final tabH = s(context, 56);                       // ★ 축소된 탭바 높이
+    final tabScale = 0.90;                             // ★ 보이는 크기 살짝 축소
+
     // 여백 (s(context, px)는 375 기준 px → 실제 스케일)
-    final titleTop = s(context, 56);
+    final titleTop = s(context, 35);
     final ringTop = s(context, 96);
-    final sectionTop = ringTop + ringSize + s(context, 48);
+    final sectionTop = ringTop + ringSize + s(context, 0);
     final pageSide = s(context, 20);
-    final listBottom = s(context, 112);
+
+    // ★ 리스트 영역을 키우기 위해 bottom 여백을 탭바 높이만큼만 두기
+    final listBottom = tabH + s(context, 8);           // ★ 112 → 훨씬 작게
 
     // 리스트 카드 스케일
-    // 1. 화면에 더 많은 일정(약 4개)을 표시하기 위해 전체 크기를 전반적으로 축소한다.
-    // 2. 수치는 화면 폭을 기준으로 계산되므로 해상도에 따라 자동으로 조정된다.
-    final iconBg = w * 0.12; // 기존 52 → 약 45로 축소하여 아이콘 배경 원 크기 줄임
-    final iconSize = iconBg * 0.46; // 아이콘 자체 크기 (비율 유지)
-    final cardPadding = w * 0.035; // 기존 16 → 약 13, 카드 내부 여백 축소
-    final titleInCard = w * 0.038; // 기존 16 → 약 14, 카드 제목 폰트 축소
-    final chipFs = w * 0.028; // 기존 12 → 약 10, 태그 글자 크기 축소
-    final timeFs = w * 0.03; // 기존 13 → 약 11, 남은 시간 글자 크기 축소
-    final cardRadius = w * 0.047; // 기존 20 → 약 18, 카드 모서리 둥글기 축소
-    final cardGap = w * 0.025; // 기존 12 → 약 10, 카드와 아이콘 사이 간격 축소
+    final iconBg = w * 0.12;
+    final iconSize = iconBg * 0.46;
+    final cardPadding = w * 0.035;
+    final titleInCard = w * 0.038;
+    final chipFs = w * 0.028;
+    final timeFs = w * 0.03;
+    final cardRadius = w * 0.047;
+    final cardGap = w * 0.025;
 
     return Scaffold(
       backgroundColor: Colors.white,
       body: Builder(
         builder: (context) {
           return Stack(
-            clipBehavior:
-            Clip.none, // ★ 오라가 바깥으로 퍼지므로 절대 자르면 안 됨
+            clipBehavior: Clip.none, // 오라가 바깥으로 퍼지므로 자르면 안 됨
             children: [
               // ------------------ 제목 ------------------
               Positioned(
@@ -313,14 +316,14 @@ class _LifeBatteryHomeScreenState
                 top: sectionTop,
                 left: pageSide,
                 right: pageSide,
-                bottom: listBottom,
+                bottom: listBottom,                    // ★ 리스트 공간 확대
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       'Today',
                       style: TextStyle(
-                        fontSize: w * 0.037, // 14
+                        fontSize: w * 0.032, // 14
                         color: const Color(0xFFB0B2C0),
                         fontWeight: FontWeight.w600,
                       ),
@@ -331,9 +334,8 @@ class _LifeBatteryHomeScreenState
                       children: [
                         Text(
                           '일정',
-                          // 화면 내 요소를 더 많이 배치하기 위해 제목 글꼴 크기를 조금 줄인다.
                           style: TextStyle(
-                            fontSize: w * 0.053, // 기존 22 → 약 20
+                            fontSize: w * 0.048, // 기존 22 → 약 20
                             fontWeight: FontWeight.w700,
                             color: const Color(0xFF111118),
                           ),
@@ -351,20 +353,16 @@ class _LifeBatteryHomeScreenState
                         ),
                       ],
                     ),
-                    // 카드 리스트와의 간격을 줄여 공간을 절약
                     SizedBox(height: s(context, 8)),
                     Expanded(
                       child: ListView.separated(
                         padding: EdgeInsets.zero,
-                        // 홈 화면에서는 최대 4개의 일정만 보여주어 가독성을 유지
-                        itemCount:
-                            repo.events.length > 4 ? 4 : repo.events.length,
+                        itemCount: repo.events.length > 4 ? 4 : repo.events.length,
                         itemBuilder: (context, index) {
                           final e = repo.events[index];
                           final running = _runningId == e.id;
                           final base = e.endAt.difference(e.startAt);
-                          final remain =
-                          running ? _remain : _remainMap[e.id] ?? base;
+                          final remain = running ? _remain : _remainMap[e.id] ?? base;
                           final rate = _rateFor(e, repo);
 
                           return Dismissible(
@@ -374,19 +372,14 @@ class _LifeBatteryHomeScreenState
                               alignment: Alignment.centerRight,
                               padding: const EdgeInsets.only(right: 20),
                               color: Colors.red,
-                              child:
-                              const Icon(Icons.delete, color: Colors.white),
+                              child: const Icon(Icons.delete, color: Colors.white),
                             ),
                             onDismissed: (_) async {
                               if (running) await _stopEvent();
                               try {
-                                await ref
-                                    .read(notificationProvider)
-                                    .cancel(e.id.hashCode);
+                                await ref.read(notificationProvider).cancel(e.id.hashCode);
                               } catch (_) {}
-                              await ref
-                                  .read(repositoryProvider)
-                                  .deleteEvent(e.id);
+                              await ref.read(repositoryProvider).deleteEvent(e.id);
                               setState(() {
                                 _remainMap.remove(e.id);
                               });
@@ -415,25 +408,30 @@ class _LifeBatteryHomeScreenState
                             ),
                           );
                         },
-                        // 각 카드 사이 간격도 줄여 더 많은 일정이 보이도록 함
-                        separatorBuilder: (_, __) =>
-                            SizedBox(height: s(context, 8)),
+                        separatorBuilder: (_, __) => SizedBox(height: s(context, 8)),
                       ),
                     ),
                   ],
                 ),
               ),
 
-              // ------------------ 하단 탭바 ------------------
+              // ------------------ 하단 탭바 (작게 & 더 아래로) ------------------
               Positioned(
-                left: s(context, 40),
+                left: s(context, 40),                  // ★ 좌우 간격 축소
                 right: s(context, 40),
-                bottom: s(context, 8),
-                child: LifeTabBar(
-                  onAdd: () async {
-                    await Navigator.pushNamed(context, '/event');
-                    if (mounted) setState(() {});
-                  },
+                bottom: s(context, 2),                 // ★ 거의 바닥에 붙임
+                child: SizedBox(
+                  height: tabH,                        // ★ 표시 높이 제한
+                  child: Transform.scale(
+                    scale: tabScale,                   // ★ 전체 스케일 다운
+                    alignment: Alignment.bottomCenter,
+                    child: LifeTabBar(
+                      onAdd: () async {
+                        await Navigator.pushNamed(context, '/event');
+                        if (mounted) setState(() {});
+                      },
+                    ),
+                  ),
                 ),
               ),
             ],
