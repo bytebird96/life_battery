@@ -86,7 +86,7 @@ class ChargingRing extends StatelessWidget {
     // 충전 중이라면 빛나는 네온 효과를 추가
     return glow.AvatarGlow(
       glowColor: const Color(0xFFEFFF7A), // 노란빛 글로우
-      endRadius: size * 0.66, // 링 크기에 비례한 글로우 범위
+      radius: size * 0.66, // 3.x 버전부터 endRadius 대신 radius 사용
       duration: const Duration(milliseconds: 1600), // 애니메이션 주기
       repeat: true, // 반복 여부
       child: ring, // 글로우 안에 배터리 링 배치

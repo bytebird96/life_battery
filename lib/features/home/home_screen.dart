@@ -265,6 +265,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final repo = ref.watch(repositoryProvider); // 저장된 일정 목록을 제공
     final battery = ref.watch(batteryControllerProvider); // 현재 배터리 퍼센트
 
+    // 화면 크기에 비례해 배터리 링의 크기와 글자 크기를 계산
+    final ringSize = MediaQuery.of(context).size.width * 0.5; // 전체 너비의 50%
+    final ringThickness = ringSize * 0.1; // 링 두께를 크기의 10%로 설정
+    final labelFont = ringSize * 0.2; // 중앙 퍼센트 글자 크기
+
     // 새로 추가된 일정이 있으면 기본 남은 시간을 설정
     for (final e in repo.events) {
       _remainMap.putIfAbsent(e.id, () => e.endAt.difference(e.startAt));
@@ -284,7 +289,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         children: [
           const SizedBox(height: 16),
           // ChargingRing 위젯으로 배터리 상태 표시
-          ChargingRing(percent: battery / 100, charging: _taskId != null),
+          ChargingRing(
+            percent: battery / 100,
+            charging: _taskId != null,
+            size: ringSize, // 계산한 전체 크기 전달
+            thickness: ringThickness, // 링 두께 전달
+            labelFont: labelFont, // 중앙 글자 크기 전달
+          ),
           const SizedBox(height: 16),
           // 일정 목록 영역
           Expanded(
