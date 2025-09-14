@@ -4,11 +4,15 @@ import 'package:flutter/material.dart';
 ///
 /// 디자인 시안(CSS)에서 전달된 구조를 최대한 그대로 Flutter로 옮겼다.
 /// 가운데 + 버튼을 누르면 [onAdd] 콜백이 실행된다.
+/// 왼쪽 시계 아이콘을 누르면 [onClock] 콜백이 실행된다.
 class LifeTabBar extends StatelessWidget {
   /// + 버튼을 눌렀을 때 실행할 함수
   final VoidCallback onAdd;
 
-  const LifeTabBar({super.key, required this.onAdd});
+  /// 왼쪽 시계 아이콘을 눌렀을 때 실행할 함수
+  final VoidCallback onClock;
+
+  const LifeTabBar({super.key, required this.onAdd, required this.onClock});
 
   @override
   Widget build(BuildContext context) {
@@ -25,9 +29,8 @@ class LifeTabBar extends StatelessWidget {
               opacity: 0.4, // CSS에서 설정된 투명도
               child: IconButton(
                 icon: const Icon(Icons.access_time_outlined, size: 28),
-                onPressed: () {
-                  // 아직 기능이 없으므로 비워둔다.
-                },
+                // 아이콘을 누르면 전달받은 콜백 실행
+                onPressed: onClock,
               ),
             ),
           ),

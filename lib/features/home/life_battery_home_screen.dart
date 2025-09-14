@@ -494,9 +494,15 @@ class _LifeBatteryHomeScreenState
                   child: Transform.scale(
                     scale: tabScale,                   // ★ 전체 스케일 다운
                     alignment: Alignment.bottomCenter,
+                    // 하단 탭바: + 버튼과 시계 아이콘에 기능을 연결한다.
                     child: LifeTabBar(
                       onAdd: () async {
                         await Navigator.pushNamed(context, '/event');
+                        if (mounted) setState(() {});
+                      },
+                      onClock: () async {
+                        // 왼쪽 시계 아이콘을 누르면 작업 화면으로 이동
+                        await Navigator.pushNamed(context, '/tasks');
                         if (mounted) setState(() {});
                       },
                     ),
