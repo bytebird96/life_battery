@@ -1,3 +1,5 @@
+import 'dart:convert'; // Map을 JSON 문자열로 저장하기 위한 패키지
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:drift/drift.dart' as dr; // SQL 실행을 위한 Drift 유틸
 import 'package:shared_preferences/shared_preferences.dart'; // 로컬 저장소 접근
@@ -14,6 +16,8 @@ class AppRepository {
   late final db.AppDb _db; // 실제 DB 접근 객체
   UserSettings settings = UserSettings();
   List<Event> events = [];
+  Map<String, String> eventIcons = {}; // 이벤트 ID별 아이콘 이름을 따로 저장
+  Map<String, String> eventColors = {}; // 이벤트 ID별 색상 이름을 따로 저장
 
   Future<void> init() async {
     _db = db.AppDb(); // 로컬 데이터베이스 초기화
@@ -27,27 +31,52 @@ class AppRepository {
     settings.initialBattery =
         prefs.getDouble('battery') ?? settings.initialBattery;
 
+    // SharedPreferences에 저장된 일정 아이콘 정보를 불러온다.
+    final iconJson = prefs.getString('eventIcons');
+    if (iconJson != null) {
+      try {
+        final decoded = jsonDecode(iconJson) as Map<String, dynamic>;
+        eventIcons = decoded.map((key, value) => MapEntry(key, value as String));
+      } catch (e) {
+        // 파싱 실패 시 안전하게 초기화한다.
+        eventIcons = {};
+      }
+    }
+
+    // SharedPreferences에 저장된 일정 색상 정보를 불러온다.
+    final colorJson = prefs.getString('eventColors');
+    if (colorJson != null) {
+      try {
+        final decoded = jsonDecode(colorJson) as Map<String, dynamic>;
+        eventColors = decoded.map((key, value) => MapEntry(key, value as String));
+      } catch (e) {
+        eventColors = {}; // 색상 정보 파싱에 실패하면 안전하게 초기화
+      }
+    }
+
     // DB에 저장된 이벤트 목록을 모두 불러온다.
     final result =
         await _db.customSelect('SELECT * FROM events').get(); // 모든 일정 조회
-    events = result
-        .map((row) => Event(
-              id: row.data['id'] as String,
-              title: row.data['title'] as String,
-              content: null, // DB 구조상 내용 컬럼이 없으므로 null 처리
-              startAt: DateTime.fromMillisecondsSinceEpoch(
-                  row.data['start_at'] as int),
-              endAt:
-                  DateTime.fromMillisecondsSinceEpoch(row.data['end_at'] as int),
-              type: EventType.values[row.data['type'] as int],
-              ratePerHour: row.data['rate_per_hour'] as double?,
-              priority: row.data['priority'] as int,
-              createdAt: DateTime.fromMillisecondsSinceEpoch(
-                  row.data['created_at'] as int),
-              updatedAt: DateTime.fromMillisecondsSinceEpoch(
-                  row.data['updated_at'] as int),
-            ))
-        .toList();
+    events = result.map((row) {
+      final id = row.data['id'] as String;
+      return Event(
+        id: id,
+        title: row.data['title'] as String,
+        content: null, // DB 구조상 내용 컬럼이 없으므로 null 처리
+        startAt:
+            DateTime.fromMillisecondsSinceEpoch(row.data['start_at'] as int),
+        endAt: DateTime.fromMillisecondsSinceEpoch(row.data['end_at'] as int),
+        type: EventType.values[row.data['type'] as int],
+        ratePerHour: row.data['rate_per_hour'] as double?,
+        priority: row.data['priority'] as int,
+        createdAt:
+            DateTime.fromMillisecondsSinceEpoch(row.data['created_at'] as int),
+        updatedAt:
+            DateTime.fromMillisecondsSinceEpoch(row.data['updated_at'] as int),
+        iconName: eventIcons[id] ?? defaultEventIconName,
+        colorName: eventColors[id] ?? defaultEventColorName,
+      );
+    }).toList();
 
     // 시작 시각 기준으로 일정들을 정렬하여 화면에 일정이 섞여 보이지 않도록 한다.
     events.sort((a, b) => a.startAt.compareTo(b.startAt));
@@ -79,6 +108,11 @@ class AppRepository {
     events.add(e);
     // 새 일정 추가 후 시작 시각 기준으로 다시 정렬
     events.sort((a, b) => a.startAt.compareTo(b.startAt));
+    // 아이콘 정보도 별도로 관리하여 다시 앱을 실행해도 복원될 수 있도록 한다.
+    eventIcons[e.id] = e.iconName;
+    eventColors[e.id] = e.colorName; // 색상 정보도 함께 저장
+    await _saveEventIcons();
+    await _saveEventColors();
 
     // customInsert는 null 값을 허용하지 않으므로
     // null 이 될 수 있는 ratePerHour를 다루기 위해 customStatement로 변경한다.
@@ -105,9 +139,25 @@ class AppRepository {
   Future<void> deleteEvent(String id) async {
     // 1. 메모리 상의 일정 목록에서 해당 ID 삭제
     events.removeWhere((e) => e.id == id);
+    eventIcons.remove(id); // 아이콘 정보도 함께 제거
+    eventColors.remove(id); // 색상 정보도 함께 제거
+    await _saveEventIcons();
+    await _saveEventColors();
 
     // 2. 로컬 데이터베이스에서도 같은 ID의 행을 제거
     await _db.customStatement('DELETE FROM events WHERE id = ?', [id]);
+  }
+
+  /// 아이콘 정보를 SharedPreferences에 저장하는 헬퍼
+  Future<void> _saveEventIcons() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('eventIcons', jsonEncode(eventIcons));
+  }
+
+  /// 색상 정보를 SharedPreferences에 저장하는 헬퍼
+  Future<void> _saveEventColors() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('eventColors', jsonEncode(eventColors));
   }
 
   /// 시뮬레이션 실행
@@ -133,7 +183,9 @@ class AppRepository {
           ratePerHour: -6,
           priority: defaultPriority(EventType.work),
           createdAt: day,
-          updatedAt: day),
+          updatedAt: day,
+          iconName: 'work',
+          colorName: 'purple'),
       Event(
           id: '2',
           title: '휴식',
@@ -144,7 +196,9 @@ class AppRepository {
           ratePerHour: null,
           priority: defaultPriority(EventType.rest),
           createdAt: day,
-          updatedAt: day),
+          updatedAt: day,
+          iconName: 'rest',
+          colorName: 'green'),
       Event(
           id: '3',
           title: '수면',
@@ -155,7 +209,9 @@ class AppRepository {
           ratePerHour: null,
           priority: defaultPriority(EventType.sleep),
           createdAt: day,
-          updatedAt: day),
+          updatedAt: day,
+          iconName: 'sleep',
+          colorName: 'blue'),
     ];
   }
 }

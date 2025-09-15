@@ -9,6 +9,8 @@ import '../../data/models.dart';
 import '../../data/repositories.dart';
 import '../../services/notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../event/event_icons.dart'; // 일정 아이콘 정보 접근
+import '../event/event_colors.dart'; // 일정 색상 정보 접근
 
 // ▼▼▼ 중요: MagSafe 스타일 배터리 링 위젯 경로(너 프로젝트에 맞춰 수정) ▼▼▼
 import 'widgets/mag_safe_charging_ring.dart';
@@ -566,89 +568,93 @@ class _EventTile extends StatelessWidget {
         ),
         child: Row(
           children: [
-          Container(
-            width: iconBg,
-            height: iconBg,
-            decoration: const BoxDecoration(
-              color: Color(0xFF9B51E0),
-              shape: BoxShape.circle,
+            Container(
+              width: iconBg,
+              height: iconBg,
+              decoration: BoxDecoration(
+                color: colorFromName(event.colorName), // 사용자가 고른 색상을 배경으로 표시
+                shape: BoxShape.circle,
+              ),
+              alignment: Alignment.center,
+              child: Icon(
+                iconDataFromName(event.iconName),
+                color: Colors.white,
+                size: iconSize,
+              ),
             ),
-            alignment: Alignment.center,
-            child: Icon(Icons.computer, color: Colors.white, size: iconSize),
-          ),
-          SizedBox(width: cardGap),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        event.title,
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: const Color(0xFF111118),
-                          fontSize: titleFs,
+            SizedBox(width: cardGap),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          event.title,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF111118),
+                            fontSize: titleFs,
+                          ),
                         ),
                       ),
-                    ),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          _formatDuration(remain),
-                          style: TextStyle(
-                              color: const Color(0xFF717489), fontSize: timeFs),
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          '(${_batteryDelta(rate, remain)})',
-                          style: TextStyle(
-                              color: const Color(0xFF717489),
-                              fontSize: timeFs - 1),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                SizedBox(height: s(context, 6)),
-                Row(
-                  children: [
-                    _TagChip(
-                      text: typeTag,
-                      color: const Color(0xFFFFE8EC),
-                      textColor: const Color(0xFFF35D6A),
-                      fontSize: chipFs,
-                      hp: s(context, 8),
-                      vp: s(context, 4),
-                      radius: s(context, 8),
-                    ),
-                    SizedBox(width: s(context, 6)),
-                    if (event.content != null && event.content!.isNotEmpty)
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _formatDuration(remain),
+                            style: TextStyle(
+                                color: const Color(0xFF717489), fontSize: timeFs),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '(${_batteryDelta(rate, remain)})',
+                            style: TextStyle(
+                                color: const Color(0xFF717489),
+                                fontSize: timeFs - 1),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: s(context, 6)),
+                  Row(
+                    children: [
                       _TagChip(
-                        text: event.content!,
-                        color: const Color(0xFFF5F0FF),
-                        textColor: const Color(0xFF9B51E0),
+                        text: typeTag,
+                        color: const Color(0xFFFFE8EC),
+                        textColor: const Color(0xFFF35D6A),
                         fontSize: chipFs,
                         hp: s(context, 8),
                         vp: s(context, 4),
                         radius: s(context, 8),
                       ),
-                  ],
-                ),
-              ],
+                      SizedBox(width: s(context, 6)),
+                      if (event.content != null && event.content!.isNotEmpty)
+                        _TagChip(
+                          text: event.content!,
+                          color: const Color(0xFFF5F0FF),
+                          textColor: const Color(0xFF9B51E0),
+                          fontSize: chipFs,
+                          hp: s(context, 8),
+                          vp: s(context, 4),
+                          radius: s(context, 8),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
-          SizedBox(width: cardGap),
-          IconButton(
-            iconSize: s(context, 24),
-            icon: Icon(running ? Icons.stop : Icons.play_arrow),
-            onPressed: onPressed,
-          ),
-        ],
+            SizedBox(width: cardGap),
+            IconButton(
+              iconSize: s(context, 24),
+              icon: Icon(running ? Icons.stop : Icons.play_arrow),
+              onPressed: onPressed,
+            ),
+          ],
+        ),
       ),
-          )
     );
   }
 
