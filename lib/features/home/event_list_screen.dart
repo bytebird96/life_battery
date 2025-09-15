@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/models.dart'; // Event 모델
 import '../../data/repositories.dart'; // 일정 저장소
+import '../event/event_icons.dart'; // 일정 아이콘 옵션/헬퍼
 
 /// 전체 일정 목록을 보여주는 화면
 ///
@@ -91,7 +92,10 @@ class _SimpleEventTile extends StatelessWidget {
               color: Color(0xFF9B51E0), // 보라색 배경
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.computer, color: Colors.white),
+            child: Icon(
+              iconDataFromName(event.iconName),
+              color: Colors.white,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(

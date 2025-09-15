@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/models.dart';
 import '../../data/repositories.dart';
 import '../../core/compute.dart';
+import 'event_icons.dart';
 
 /// 일정 등록/수정 화면
 /// - 제목, 내용, 소요 시간, 배터리 변화를 입력받아 이벤트를 저장하거나 수정
@@ -17,6 +18,58 @@ class EditEventScreen extends ConsumerStatefulWidget {
   ConsumerState<EditEventScreen> createState() => _EditEventState();
 }
 
+/// 아이콘 선택 버튼 위젯
+///
+/// - 동그란 버튼 안에 실제 아이콘을 보여주고 선택 시 강조 표시한다.
+/// - 사용자가 어떤 아이콘인지 이해할 수 있도록 아래에 라벨 텍스트도 출력한다.
+class _IconChoice extends StatelessWidget {
+  final EventIconOption option; // 현재 표시할 아이콘 옵션
+  final bool selected; // 사용자가 이 옵션을 선택했는지 여부
+  final VoidCallback onSelected; // 사용자가 누를 때 실행할 콜백
+
+  const _IconChoice({
+    required this.option,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bgColor = selected ? const Color(0xFF9B51E0) : const Color(0xFFF7F7FA);
+    final borderColor = selected ? const Color(0xFF9B51E0) : const Color(0xFFDDDEE5);
+    final iconColor = selected ? Colors.white : const Color(0xFF717489);
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onSelected,
+            customBorder: const CircleBorder(),
+            child: Container(
+              width: 60,
+              height: 60,
+              decoration: BoxDecoration(
+                color: bgColor,
+                shape: BoxShape.circle,
+                border: Border.all(color: borderColor),
+              ),
+              alignment: Alignment.center,
+              child: Icon(option.icon, color: iconColor, size: 28),
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          option.label,
+          style: const TextStyle(fontSize: 12, color: Color(0xFF55586A)),
+        ),
+      ],
+    );
+  }
+}
+
 class _EditEventState extends ConsumerState<EditEventScreen> {
   final _formKey = GlobalKey<FormState>(); // 폼 상태 관리 키
 
@@ -26,6 +79,7 @@ class _EditEventState extends ConsumerState<EditEventScreen> {
   int _minutes = 0; // 소요 시간(분)
   double _battery = 0.0; // 배터리 변화량(절대값, 양수만 저장)
   bool _isCharge = false; // true=충전, false=소모 (기본값: 소모)
+  String _iconName = defaultEventIconName; // 선택된 아이콘 식별자 (문자열)
 
   @override
   void initState() {
@@ -39,6 +93,7 @@ class _EditEventState extends ConsumerState<EditEventScreen> {
       final total = (e.ratePerHour ?? 0) * (_minutes / 60); // 전체 배터리 변화량
       _isCharge = total >= 0; // 0 이상이면 충전, 음수면 소모
       _battery = total.abs(); // 표시를 위해 절대값 사용
+      _iconName = e.iconName; // 저장된 아이콘을 그대로 사용
     }
   }
 
@@ -103,6 +158,32 @@ class _EditEventState extends ConsumerState<EditEventScreen> {
                 ),
               ],
             ),
+            const SizedBox(height: 16),
+            // 아이콘 선택 영역 (여러 후보 중 하나 선택)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '아이콘 선택',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: [
+                    for (final option in eventIconOptions)
+                      _IconChoice(
+                        option: option,
+                        selected: _iconName == option.name,
+                        onSelected: () {
+                          setState(() => _iconName = option.name);
+                        },
+                      ),
+                  ],
+                ),
+              ],
+            ),
             const SizedBox(height: 20),
             // 저장 버튼
             ElevatedButton(
@@ -130,6 +211,7 @@ class _EditEventState extends ConsumerState<EditEventScreen> {
                       widget.event?.priority ?? defaultPriority(EventType.neutral),
                   createdAt: widget.event?.createdAt ?? DateTime.now(),
                   updatedAt: DateTime.now(),
+                  iconName: _iconName, // 사용자가 고른 아이콘을 함께 저장
                 );
                 repo.saveEvent(e); // 이벤트 저장/수정
                 Navigator.pop(context); // 이전 화면으로 복귀
