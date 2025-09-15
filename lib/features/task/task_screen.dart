@@ -7,6 +7,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/models.dart';
 import '../../data/repositories.dart';
 import '../event/edit_event_screen.dart';
+import '../home/battery_controller.dart';
+import '../../services/notifications.dart';
 
 /// 실행 중인 일정과 전체 일정을 보여주는 화면
 ///
@@ -69,6 +71,102 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
       });
     }
     setState(() {}); // 초기 화면 갱신
+  }
+
+  /// 실행 중인 일정 정보를 저장소에 기록한다.
+  Future<void> _saveRunningTask(Event e, Duration duration) async {
+    final prefs = await SharedPreferences.getInstance();
+    final battery = ref.read(batteryControllerProvider); // 현재 배터리 값
+    await prefs.setDouble('battery', battery); // 배터리 퍼센트 저장
+    await prefs.setString('taskId', e.id); // 실행 중 일정 ID 저장
+    await prefs.setDouble('ratePerHour', e.ratePerHour ?? 0); // 시간당 변화율
+    await prefs.setInt('duration', duration.inSeconds); // 전체 예정 시간(초)
+    await prefs.setInt('startTime',
+        DateTime.now().millisecondsSinceEpoch); // 시작 시각 기록
+  }
+
+  /// 실행 중인 일정 정보를 저장소에서 제거한다.
+  Future<void> _clearRunningTask() async {
+    final prefs = await SharedPreferences.getInstance();
+    final battery = ref.read(batteryControllerProvider); // 현재 배터리 값
+    await prefs.setDouble('battery', battery); // 최신 배터리 퍼센트 저장
+    await prefs.remove('taskId');
+    await prefs.remove('ratePerHour');
+    await prefs.remove('duration');
+    await prefs.remove('startTime');
+  }
+
+  /// 전달받은 일정을 시작한다.
+  Future<void> _startEvent(Event e) async {
+    // 이미 실행 중인 일정이 있다면 먼저 중지
+    if (_runningEvent != null) {
+      await _stopEvent();
+    }
+
+    final duration = e.endAt.difference(e.startAt); // 전체 예정 시간
+    // 배터리 컨트롤러에 작업 시작 요청
+    ref.read(batteryControllerProvider.notifier).startTask(
+          ratePerHour: e.ratePerHour ?? 0,
+          duration: duration,
+        );
+
+    // 일정 완료 알림 예약
+    final notif = ref.read(notificationProvider);
+    try {
+      await notif.cancel(e.id.hashCode); // 기존 알림이 있다면 취소
+      await notif.scheduleComplete(
+        id: e.id.hashCode,
+        title: '일정 완료',
+        body: '${e.title}이(가) 완료되었습니다',
+        after: duration,
+      );
+    } catch (err) {
+      debugPrint('알림 예약 실패: $err');
+    }
+
+    // 실행 정보 저장
+    await _saveRunningTask(e, duration);
+
+    // 화면 상태 갱신 및 카운트다운 시작
+    _timer?.cancel();
+    setState(() {
+      _runningEvent = e;
+      _remain = duration;
+    });
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (_remain.inSeconds <= 1) {
+        _stopEvent(completed: true); // 시간이 끝나면 자동 종료
+      } else {
+        setState(() => _remain -= const Duration(seconds: 1));
+      }
+    });
+  }
+
+  /// 실행 중인 일정을 중지한다.
+  Future<void> _stopEvent({bool completed = false}) async {
+    // 배터리 변화 중지
+    ref.read(batteryControllerProvider.notifier).stop();
+    _timer?.cancel();
+
+    // 완료 전에 중지하면 예약된 알림 취소
+    if (!completed && _runningEvent != null) {
+      try {
+        await ref
+            .read(notificationProvider)
+            .cancel(_runningEvent!.id.hashCode);
+      } catch (err) {
+        debugPrint('알림 취소 실패: $err');
+      }
+    }
+
+    // 저장된 실행 정보 제거
+    await _clearRunningTask();
+
+    // 화면 상태 리셋
+    setState(() {
+      _runningEvent = null;
+      _remain = Duration.zero;
+    });
   }
 
   /// 이벤트 종류에 따라 시간당 배터리 증감률을 반환한다.
@@ -145,6 +243,11 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
                           ],
                         ),
                       ),
+                      // 실행 중인 일정을 즉시 중지할 수 있는 버튼
+                      IconButton(
+                        icon: const Icon(Icons.stop),
+                        onPressed: _stopEvent,
+                      ),
                       const Icon(Icons.chevron_right),
                     ],
                   ),
@@ -158,9 +261,23 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
                 itemCount: repo.events.length,
                 itemBuilder: (context, index) {
                   final e = repo.events[index];
-                  final remain = e.endAt.difference(e.startAt);
+                  final running = _runningEvent?.id == e.id; // 현재 실행 중인지 여부
+                  final remain =
+                      running ? _remain : e.endAt.difference(e.startAt); // 남은 시간
                   final rate = _rateFor(e, repo);
-                  return _SimpleEventTile(event: e, remain: remain, rate: rate);
+                  return _SimpleEventTile(
+                    event: e,
+                    remain: remain,
+                    rate: rate,
+                    running: running,
+                    onPressed: () {
+                      if (running) {
+                        _stopEvent();
+                      } else {
+                        _startEvent(e);
+                      }
+                    },
+                  );
                 },
                 separatorBuilder: (_, __) => const SizedBox(height: 12),
               ),
@@ -179,9 +296,16 @@ class _SimpleEventTile extends StatelessWidget {
   final Event event; // 보여줄 일정
   final Duration remain; // 전체 혹은 남은 시간
   final double rate; // 시간당 배터리 변화량
+  final bool running; // 현재 실행 중인지 여부
+  final VoidCallback onPressed; // 버튼 눌렀을 때 동작
 
-  const _SimpleEventTile(
-      {required this.event, required this.remain, required this.rate});
+  const _SimpleEventTile({
+    required this.event,
+    required this.remain,
+    required this.rate,
+    required this.running,
+    required this.onPressed,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -256,6 +380,11 @@ class _SimpleEventTile extends StatelessWidget {
                 ),
               ],
             ),
+          ),
+          // 실행 여부에 따라 아이콘을 바꾸는 시작/중지 버튼
+          IconButton(
+            icon: Icon(running ? Icons.stop : Icons.play_arrow),
+            onPressed: onPressed,
           ),
         ],
       ),
