@@ -316,8 +316,8 @@ class _LifeBatteryHomeScreenState
     final titleFs = w * 0.074;
 
     // ★ 하단 탭바의 실제 표시 높이(작게)
-    final tabH = s(context, 56);                       // ★ 축소된 탭바 높이
-    final tabScale = 0.90;                             // ★ 보이는 크기 살짝 축소
+    final tabH = s(context, 85);                       // ★ 축소된 탭바 높이
+    final tabScale = 0.99;                             // ★ 보이는 크기 살짝 축소
 
     // 여백 (s(context, px)는 375 기준 px → 실제 스케일)
     final titleTop = s(context, 35);
@@ -486,9 +486,9 @@ class _LifeBatteryHomeScreenState
 
               // ------------------ 하단 탭바 (작게 & 더 아래로) ------------------
               Positioned(
-                left: s(context, 40),                  // ★ 좌우 간격 축소
-                right: s(context, 40),
-                bottom: s(context, 2),                 // ★ 거의 바닥에 붙임
+                left: s(context, 50),                  // ★ 좌우 간격 축소
+                right: s(context, 50),
+                bottom: s(context, 1),                 // ★ 거의 바닥에 붙임
                 child: SizedBox(
                   height: tabH,                        // ★ 표시 높이 제한
                   child: Transform.scale(
