@@ -357,7 +357,7 @@ class _LifeBatteryHomeScreenState
                       fontWeight: FontWeight.w700,
                       color: const Color(0xFF111118),
                       fontSize: titleFs,
-                      height: 1.1,
+                      height: 2.5,
                     ),
                   ),
                 ),
