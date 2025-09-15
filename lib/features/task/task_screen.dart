@@ -197,17 +197,26 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
     final repo = ref.watch(repositoryProvider); // 일정 데이터 접근
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Task')),
+      appBar: AppBar(
+        title: const Text('Task'),
+        actions: const [
+          // 상단 오른쪽 더보기 아이콘 (현재 동작 없음)
+          Padding(
+            padding: EdgeInsets.only(right: 8),
+            child: Icon(Icons.more_vert),
+          )
+        ],
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (_runningEvent != null) ...[
-              // 실행 중인 일정 표시 영역
+              // 실행 중인 일정을 크게 보여주는 카드
               GestureDetector(
                 onTap: () {
-                  // 일정 영역을 탭하면 수정 화면으로 이동
+                  // 카드 탭 시 수정 화면으로 이동
                   Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -216,45 +225,67 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
                   );
                 },
                 child: Container(
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF7F7FA),
-                    borderRadius: BorderRadius.circular(16),
+                    color: const Color(0xFF1D2235), // 시안과 비슷한 진한 배경색
+                    borderRadius: BorderRadius.circular(20),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.play_arrow, size: 28),
-                      const SizedBox(width: 12),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              _runningEvent!.title,
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.black),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
                               _format(_remain),
-                              style: const TextStyle(color: Colors.black54),
+                              style: const TextStyle(
+                                  fontSize: 28,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              _runningEvent!.title,
+                              style:
+                                  const TextStyle(color: Colors.white70, fontSize: 16),
                             ),
                           ],
                         ),
                       ),
-                      // 실행 중인 일정을 즉시 중지할 수 있는 버튼
-                      IconButton(
-                        icon: const Icon(Icons.stop),
-                        onPressed: _stopEvent,
+                      // 중지 버튼 대신 우측에 재생 아이콘 표시
+                      GestureDetector(
+                        onTap: _stopEvent,
+                        child: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: const BoxDecoration(
+                            color: Colors.white24,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.stop, color: Colors.white),
+                        ),
                       ),
-                      const Icon(Icons.chevron_right),
                     ],
                   ),
                 ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 24),
             ],
+            // 오늘의 일정 제목과 전체보기 버튼
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: const [
+                Text(
+                  'Today',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  'See All',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
             // 전체 일정 목록
             Expanded(
               child: ListView.separated(
@@ -309,24 +340,37 @@ class _SimpleEventTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final typeTag = event.type.name[0].toUpperCase() + event.type.name.substring(1);
+    final typeTag =
+        event.type.name[0].toUpperCase() + event.type.name.substring(1);
+
+    // 일정 타입별 아이콘과 배경색 정의
+    final iconData = _iconFor(event.type);
+    final iconBg = _iconBg(event.type);
 
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFF7F7FA),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black12,
+            blurRadius: 4,
+            offset: Offset(0, 2),
+          ),
+        ],
       ),
       child: Row(
         children: [
+          // 왼쪽 원형 아이콘 영역
           Container(
-            width: 40,
-            height: 40,
-            decoration: const BoxDecoration(
-              color: Color(0xFF9B51E0),
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: iconBg,
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.computer, color: Colors.white),
+            child: Icon(iconData, color: Colors.white),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -382,9 +426,20 @@ class _SimpleEventTile extends StatelessWidget {
             ),
           ),
           // 실행 여부에 따라 아이콘을 바꾸는 시작/중지 버튼
-          IconButton(
-            icon: Icon(running ? Icons.stop : Icons.play_arrow),
-            onPressed: onPressed,
+          GestureDetector(
+            onTap: onPressed,
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: const BoxDecoration(
+                color: Color(0xFFEDEDED),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                running ? Icons.stop : Icons.play_arrow,
+                color: Colors.black,
+              ),
+            ),
           ),
         ],
       ),
@@ -402,6 +457,34 @@ class _SimpleEventTile extends StatelessWidget {
     final change = rate * remain.inSeconds / 3600;
     final sign = change > 0 ? '+' : '';
     return '$sign${change.toStringAsFixed(1)}%';
+  }
+
+  // 일정 타입별 아이콘 결정
+  IconData _iconFor(EventType type) {
+    switch (type) {
+      case EventType.work:
+        return Icons.design_services; // 작업
+      case EventType.rest:
+        return Icons.self_improvement; // 휴식
+      case EventType.sleep:
+        return Icons.nights_stay; // 수면
+      case EventType.neutral:
+        return Icons.hourglass_bottom; // 기타
+    }
+  }
+
+  // 일정 타입별 배경색 결정
+  Color _iconBg(EventType type) {
+    switch (type) {
+      case EventType.work:
+        return const Color(0xFF9B51E0); // 보라색
+      case EventType.rest:
+        return const Color(0xFFFF8748); // 주황색
+      case EventType.sleep:
+        return const Color(0xFF26C6DA); // 파란색
+      case EventType.neutral:
+        return const Color(0xFF6FCF97); // 초록색
+    }
   }
 }
 
