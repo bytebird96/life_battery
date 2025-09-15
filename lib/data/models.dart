@@ -10,6 +10,12 @@ enum EventType { work, rest, sleep, neutral }
 /// - 실제 아이콘 매핑은 features/event/event_icons.dart에서 관리한다.
 const String defaultEventIconName = 'work';
 
+/// 이벤트 기본 색상 키
+///
+/// - 사용자가 별도의 색을 지정하지 않았을 때 사용할 기본값이다.
+/// - 실제 색상 매핑은 features/event/event_colors.dart에서 관리한다.
+const String defaultEventColorName = 'purple';
+
 /// 이벤트 데이터 모델
 class Event {
   final String id;
@@ -23,6 +29,7 @@ class Event {
   final DateTime createdAt;
   final DateTime updatedAt;
   final String iconName; // UI에서 사용할 아이콘 식별자(문자열로 관리)
+  final String colorName; // UI에서 사용할 색상 식별자(문자열로 관리)
 
   Event({
     required this.id,
@@ -36,6 +43,7 @@ class Event {
     required this.createdAt,
     required this.updatedAt,
     this.iconName = defaultEventIconName, // 별도 지정이 없으면 기본 아이콘 사용
+    this.colorName = defaultEventColorName, // 별도 지정이 없으면 기본 색상 사용
   });
 }
 

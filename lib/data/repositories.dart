@@ -17,6 +17,7 @@ class AppRepository {
   UserSettings settings = UserSettings();
   List<Event> events = [];
   Map<String, String> eventIcons = {}; // 이벤트 ID별 아이콘 이름을 따로 저장
+  Map<String, String> eventColors = {}; // 이벤트 ID별 색상 이름을 따로 저장
 
   Future<void> init() async {
     _db = db.AppDb(); // 로컬 데이터베이스 초기화
@@ -42,6 +43,17 @@ class AppRepository {
       }
     }
 
+    // SharedPreferences에 저장된 일정 색상 정보를 불러온다.
+    final colorJson = prefs.getString('eventColors');
+    if (colorJson != null) {
+      try {
+        final decoded = jsonDecode(colorJson) as Map<String, dynamic>;
+        eventColors = decoded.map((key, value) => MapEntry(key, value as String));
+      } catch (e) {
+        eventColors = {}; // 색상 정보 파싱에 실패하면 안전하게 초기화
+      }
+    }
+
     // DB에 저장된 이벤트 목록을 모두 불러온다.
     final result =
         await _db.customSelect('SELECT * FROM events').get(); // 모든 일정 조회
@@ -62,6 +74,7 @@ class AppRepository {
         updatedAt:
             DateTime.fromMillisecondsSinceEpoch(row.data['updated_at'] as int),
         iconName: eventIcons[id] ?? defaultEventIconName,
+        colorName: eventColors[id] ?? defaultEventColorName,
       );
     }).toList();
 
@@ -97,7 +110,9 @@ class AppRepository {
     events.sort((a, b) => a.startAt.compareTo(b.startAt));
     // 아이콘 정보도 별도로 관리하여 다시 앱을 실행해도 복원될 수 있도록 한다.
     eventIcons[e.id] = e.iconName;
+    eventColors[e.id] = e.colorName; // 색상 정보도 함께 저장
     await _saveEventIcons();
+    await _saveEventColors();
 
     // customInsert는 null 값을 허용하지 않으므로
     // null 이 될 수 있는 ratePerHour를 다루기 위해 customStatement로 변경한다.
@@ -125,7 +140,9 @@ class AppRepository {
     // 1. 메모리 상의 일정 목록에서 해당 ID 삭제
     events.removeWhere((e) => e.id == id);
     eventIcons.remove(id); // 아이콘 정보도 함께 제거
+    eventColors.remove(id); // 색상 정보도 함께 제거
     await _saveEventIcons();
+    await _saveEventColors();
 
     // 2. 로컬 데이터베이스에서도 같은 ID의 행을 제거
     await _db.customStatement('DELETE FROM events WHERE id = ?', [id]);
@@ -135,6 +152,12 @@ class AppRepository {
   Future<void> _saveEventIcons() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('eventIcons', jsonEncode(eventIcons));
+  }
+
+  /// 색상 정보를 SharedPreferences에 저장하는 헬퍼
+  Future<void> _saveEventColors() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('eventColors', jsonEncode(eventColors));
   }
 
   /// 시뮬레이션 실행
@@ -161,7 +184,8 @@ class AppRepository {
           priority: defaultPriority(EventType.work),
           createdAt: day,
           updatedAt: day,
-          iconName: 'work'),
+          iconName: 'work',
+          colorName: 'purple'),
       Event(
           id: '2',
           title: '휴식',
@@ -173,7 +197,8 @@ class AppRepository {
           priority: defaultPriority(EventType.rest),
           createdAt: day,
           updatedAt: day,
-          iconName: 'rest'),
+          iconName: 'rest',
+          colorName: 'green'),
       Event(
           id: '3',
           title: '수면',
@@ -185,7 +210,8 @@ class AppRepository {
           priority: defaultPriority(EventType.sleep),
           createdAt: day,
           updatedAt: day,
-          iconName: 'sleep'),
+          iconName: 'sleep',
+          colorName: 'blue'),
     ];
   }
 }

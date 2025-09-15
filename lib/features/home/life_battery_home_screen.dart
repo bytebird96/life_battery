@@ -10,6 +10,7 @@ import '../../data/repositories.dart';
 import '../../services/notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../event/event_icons.dart'; // 일정 아이콘 정보 접근
+import '../event/event_colors.dart'; // 일정 색상 정보 접근
 
 // ▼▼▼ 중요: MagSafe 스타일 배터리 링 위젯 경로(너 프로젝트에 맞춰 수정) ▼▼▼
 import 'widgets/mag_safe_charging_ring.dart';
@@ -570,8 +571,8 @@ class _EventTile extends StatelessWidget {
             Container(
               width: iconBg,
               height: iconBg,
-              decoration: const BoxDecoration(
-                color: Color(0xFF9B51E0),
+              decoration: BoxDecoration(
+                color: colorFromName(event.colorName), // 사용자가 고른 색상을 배경으로 표시
                 shape: BoxShape.circle,
               ),
               alignment: Alignment.center,

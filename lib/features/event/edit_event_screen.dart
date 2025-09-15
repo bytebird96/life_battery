@@ -4,6 +4,7 @@ import '../../data/models.dart';
 import '../../data/repositories.dart';
 import '../../core/compute.dart';
 import 'event_icons.dart';
+import 'event_colors.dart';
 
 /// 일정 등록/수정 화면
 /// - 제목, 내용, 소요 시간, 배터리 변화를 입력받아 이벤트를 저장하거나 수정
@@ -70,6 +71,70 @@ class _IconChoice extends StatelessWidget {
   }
 }
 
+/// 색상 선택 버튼 위젯
+///
+/// - 원형 색상 뱃지를 보여주고 선택된 색상은 체크 아이콘으로 강조한다.
+/// - 초보자도 이해할 수 있도록 아래에 색상 이름을 함께 노출한다.
+class _ColorChoice extends StatelessWidget {
+  final EventColorOption option; // 현재 표시할 색상 옵션
+  final bool selected; // 사용자가 이 색상을 선택했는지 여부
+  final VoidCallback onSelected; // 누를 때 실행할 콜백
+
+  const _ColorChoice({
+    required this.option,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onSelected,
+            customBorder: const CircleBorder(),
+            child: Container(
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                color: option.color, // 실제 색상 표시
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: selected
+                      ? Colors.white
+                      : option.color.withOpacity(0.4), // 선택 여부에 따른 테두리 색상
+                  width: 3,
+                ),
+                boxShadow: selected
+                    ? [
+                        BoxShadow(
+                          color: option.color.withOpacity(0.5),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ]
+                    : null,
+              ),
+              alignment: Alignment.center,
+              child: selected
+                  ? const Icon(Icons.check, color: Colors.white)
+                  : null, // 선택된 경우 체크 아이콘 표시
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          option.label,
+          style: const TextStyle(fontSize: 12, color: Color(0xFF55586A)),
+        ),
+      ],
+    );
+  }
+}
+
 class _EditEventState extends ConsumerState<EditEventScreen> {
   final _formKey = GlobalKey<FormState>(); // 폼 상태 관리 키
 
@@ -80,6 +145,7 @@ class _EditEventState extends ConsumerState<EditEventScreen> {
   double _battery = 0.0; // 배터리 변화량(절대값, 양수만 저장)
   bool _isCharge = false; // true=충전, false=소모 (기본값: 소모)
   String _iconName = defaultEventIconName; // 선택된 아이콘 식별자 (문자열)
+  String _colorName = defaultEventColorName; // 선택된 색상 식별자 (문자열)
 
   @override
   void initState() {
@@ -94,6 +160,7 @@ class _EditEventState extends ConsumerState<EditEventScreen> {
       _isCharge = total >= 0; // 0 이상이면 충전, 음수면 소모
       _battery = total.abs(); // 표시를 위해 절대값 사용
       _iconName = e.iconName; // 저장된 아이콘을 그대로 사용
+      _colorName = e.colorName; // 저장된 색상도 함께 적용
     }
   }
 
@@ -184,6 +251,32 @@ class _EditEventState extends ConsumerState<EditEventScreen> {
                 ),
               ],
             ),
+            const SizedBox(height: 16),
+            // 색상 선택 영역 (원형 색상 중 하나 선택)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '색상 선택',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: [
+                    for (final option in eventColorOptions)
+                      _ColorChoice(
+                        option: option,
+                        selected: _colorName == option.name,
+                        onSelected: () {
+                          setState(() => _colorName = option.name);
+                        },
+                      ),
+                  ],
+                ),
+              ],
+            ),
             const SizedBox(height: 20),
             // 저장 버튼
             ElevatedButton(
@@ -212,6 +305,7 @@ class _EditEventState extends ConsumerState<EditEventScreen> {
                   createdAt: widget.event?.createdAt ?? DateTime.now(),
                   updatedAt: DateTime.now(),
                   iconName: _iconName, // 사용자가 고른 아이콘을 함께 저장
+                  colorName: _colorName, // 사용자가 고른 색상도 함께 저장
                 );
                 repo.saveEvent(e); // 이벤트 저장/수정
                 Navigator.pop(context); // 이전 화면으로 복귀
