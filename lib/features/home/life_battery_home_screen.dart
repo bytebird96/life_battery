@@ -1,24 +1,31 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:energy_battery/features/home/widgets/life_tab_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'battery_controller.dart';
-import '../../data/models.dart';
-import '../../data/repositories.dart';
-import '../../services/notifications.dart';
+import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../event/event_icons.dart'; // 일정 아이콘 정보 접근
-import '../event/event_colors.dart'; // 일정 색상 정보 접근
 
-// ▼▼▼ 중요: MagSafe 스타일 배터리 링 위젯 경로(너 프로젝트에 맞춰 수정) ▼▼▼
-import 'widgets/mag_safe_charging_ring.dart';
-import 'event_detail_screen.dart';
-
-import '../../core/scale.dart'; // s(context, px) 헬퍼
+import '../../core/scale.dart'; // 디자인 시안의 px 값을 기기 해상도에 맞게 변환하는 헬퍼
+import '../../data/models.dart'; // 기존 시간표(Event) 모델
+import '../../data/repositories.dart'; // 기존 이벤트/설정 저장소
+import '../../data/schedule_models.dart'; // 위치 기반 일정(Schedule) 모델
+import '../../data/schedule_repository.dart'; // 위치 기반 일정 레포지토리 프로바이더
+import '../../features/schedule/providers.dart'; // 위치 기반 일정 스트림 프로바이더
+import '../../services/geofence_manager.dart'; // 지오펜스 매니저 (동기화 담당)
+import '../../services/notifications.dart'; // 로컬 알림 서비스
+import 'battery_controller.dart'; // 배터리 퍼센트 관리 컨트롤러
+import '../event/event_colors.dart'; // 일정 카드 색상
+import '../event/event_icons.dart'; // 일정 카드 아이콘
+import 'event_detail_screen.dart'; // 일정 상세 화면
+import 'widgets/mag_safe_charging_ring.dart'; // 배터리 링 위젯
 
 /// HTML/CSS 시안을 Flutter로 이식한 홈 화면
+/// 여기에 위치 기반 일정(지오펜스) 관련 UI와 권한 요청 로직을 이식했다.
 class LifeBatteryHomeScreen extends ConsumerStatefulWidget {
   const LifeBatteryHomeScreen({super.key});
 
@@ -27,31 +34,88 @@ class LifeBatteryHomeScreen extends ConsumerStatefulWidget {
       _LifeBatteryHomeScreenState();
 }
 
-class _LifeBatteryHomeScreenState
-    extends ConsumerState<LifeBatteryHomeScreen> {
-  String? _runningId;
-  Duration _remain = Duration.zero;
-  double _runningRate = 0;
-  final Map<String, Duration> _remainMap = {};
-  Timer? _countdown;
+class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
+  // ======================== 기존 배터리/타이머 상태 ========================
+  String? _runningId; // 현재 실행 중인 이벤트 ID
+  Duration _remain = Duration.zero; // 실행 중 이벤트의 남은 시간
+  double _runningRate = 0; // 실행 중 이벤트의 시간당 배터리 증감율
+  final Map<String, Duration> _remainMap = {}; // 각 이벤트별 남은 시간 기록
+  Timer? _countdown; // 1초마다 남은 시간을 갱신하는 타이머
 
-  // ------------------------------ 상태 복원/저장 ------------------------------
+  // ======================== 신규: 권한/지오펜스 준비 상태 ========================
+  bool _requesting = false; // 권한 요청이 중복 실행되는 것을 막기 위한 플래그
+
+  // ------------------------------ 생명주기 ------------------------------
   @override
   void initState() {
     super.initState();
+
+    // 1) 앱 시작 시 기존 이벤트 목록을 불러와 남은 시간을 초기화한다.
     final repo = ref.read(repositoryProvider);
     for (final e in repo.events) {
       _remainMap[e.id] = e.endAt.difference(e.startAt);
     }
+
+    // 2) SharedPreferences에 저장된 진행 중인 작업 정보를 비동기로 불러온다.
     Future.microtask(_loadState);
+
+    // 3) 첫 프레임이 그려진 직후 위치 권한을 요청하고 지오펜스를 동기화한다.
+    //    (빌드 전에 실행하면 로딩이 길어져 UI가 멈춘 것처럼 느껴질 수 있다.)
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _prepareLocationSchedules();
+    });
   }
 
   @override
   void dispose() {
+    // 화면이 사라질 때 타이머를 반드시 정리하여 메모리 누수를 막는다.
     _countdown?.cancel();
     super.dispose();
   }
 
+  // ------------------ 신규: 위치 권한 요청 + 지오펜스 동기화 ------------------
+  Future<void> _prepareLocationSchedules() async {
+    if (!mounted) return; // 위젯이 이미 dispose 되었다면 아무것도 하지 않는다.
+
+    await _requestPermissions(); // 위치 관련 권한을 먼저 요청
+    if (!mounted) return;
+
+    // 위치 기반 일정 동기화: 일정 목록과 지오펜스 매니저를 가져온다.
+    final scheduleRepo = ref.read(scheduleRepositoryProvider);
+    final geo = ref.read(geofenceManagerProvider);
+    try {
+      await geo.init(); // 이미 초기화되어 있다면 내부에서 무시하도록 구현되어 있다고 가정
+      await geo.syncSchedules(scheduleRepo.currentSchedules);
+    } catch (e) {
+      // 지오펜스 준비는 필수는 아니므로, 실패하더라도 앱이 죽지 않도록 로그만 남긴다.
+      debugPrint('지오펜스 준비 실패: $e');
+    }
+  }
+
+  /// 위치/알림 관련 권한을 순차적으로 요청한다.
+  /// 초보자도 이해할 수 있도록 어떤 플랫폼에서 어떤 권한을 요구하는지 주석을 덧붙였다.
+  Future<void> _requestPermissions() async {
+    if (_requesting) return; // 이미 요청 중이라면 중복 호출 방지
+    _requesting = true;
+    try {
+      // iOS/Android 공통: 기본 위치 권한(앱 사용 중)을 먼저 요청한다.
+      await Permission.location.request();
+
+      if (Platform.isAndroid) {
+        // Android: 항상 허용 권한, 알림 권한, 배터리 최적화 무시 권한까지 요청
+        await Permission.locationAlways.request();
+        await Permission.notification.request();
+        await Permission.ignoreBatteryOptimizations.request();
+      } else {
+        // iOS: 항상 허용 권한만 추가로 요청하면 된다.
+        await Permission.locationAlways.request();
+      }
+    } finally {
+      _requesting = false;
+    }
+  }
+
+  // ------------------------------ 상태 복원/저장 ------------------------------
   Future<void> _saveRemainMap() async {
     final prefs = await SharedPreferences.getInstance();
     final map = _remainMap.map((k, v) => MapEntry(k, v.inSeconds));
@@ -205,7 +269,7 @@ class _LifeBatteryHomeScreenState
     setState(() {
       if (_runningId != null) {
         _remainMap[_runningId!] =
-        _remain.inSeconds <= 1 ? Duration.zero : _remain;
+            _remain.inSeconds <= 1 ? Duration.zero : _remain;
       }
       _runningId = null;
       _runningRate = 0;
@@ -306,6 +370,9 @@ class _LifeBatteryHomeScreenState
       _remainMap.putIfAbsent(e.id, () => e.endAt.difference(e.startAt));
     }
 
+    // 위치 기반 일정 스트림을 구독한다. (AsyncValue<List<Schedule>>)
+    final schedulesAsync = ref.watch(scheduleStreamProvider);
+
     // ====== 시안 비율(가로 기준) ======
     final w = MediaQuery.of(context).size.width;
 
@@ -317,18 +384,16 @@ class _LifeBatteryHomeScreenState
     // 제목 폰트: 폭의 ~7.4%
     final titleFs = w * 0.074;
 
-    // ★ 하단 탭바의 실제 표시 높이(작게)
-    final tabH = s(context, 85);                       // ★ 축소된 탭바 높이
-    final tabScale = 0.99;                             // ★ 보이는 크기 살짝 축소
+    // 하단 탭바 스케일 및 위치 계산
+    final tabH = s(context, 85);
+    final tabScale = 0.99;
 
-    // 여백 (s(context, px)는 375 기준 px → 실제 스케일)
+    // 주요 레이아웃 위치/여백 계산
     final titleTop = s(context, 35);
     final ringTop = s(context, 96);
     final sectionTop = ringTop + ringSize + s(context, 0);
     final pageSide = s(context, 20);
-
-    // ★ 리스트 영역을 키우기 위해 bottom 여백을 탭바 높이만큼만 두기
-    final listBottom = tabH + s(context, 8);           // ★ 112 → 훨씬 작게
+    final listBottom = tabH + s(context, 8);
 
     // 리스트 카드 스케일
     final iconBg = w * 0.12;
@@ -342,199 +407,375 @@ class _LifeBatteryHomeScreenState
 
     return Scaffold(
       backgroundColor: Colors.white,
-      body: Builder(
-        builder: (context) {
-          return Stack(
-            clipBehavior: Clip.none, // 오라가 바깥으로 퍼지므로 자르면 안 됨
-            children: [
-              // ------------------ 제목 ------------------
-              Positioned(
-                top: titleTop,
-                left: 0,
-                right: 0,
-                child: Center(
-                  child: Text(
-                    'Life Battery',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: const Color(0xFF111118),
-                      fontSize: titleFs,
-                      height: 2.5,
-                    ),
-                  ),
+      body: Stack(
+        clipBehavior: Clip.none, // 배터리 링의 광채가 잘리면 안 되므로 none 유지
+        children: [
+          // ------------------ 제목 ------------------
+          Positioned(
+            top: titleTop,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: Text(
+                'Life Battery',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF111118),
+                  fontSize: titleFs,
+                  height: 2.5,
                 ),
               ),
+            ),
+          ),
 
-              // ------------------ 배터리 링 (MagSafe 스타일) ------------------
-              Positioned(
-                top: ringTop,
-                left: 0,
-                right: 0,
-                child: Center(
-                  child: MagSafeChargingRing(
-                    percent: percent,
-                    charging: _runningRate > 0, // 충전 중일 때만 오라 출력
-                    size: ringSize,
-                    thickness: ringThick,
-                    labelFont: labelFont,
-                  ),
-                ),
+          // ------------------ 배터리 링 (MagSafe 스타일) ------------------
+          Positioned(
+            top: ringTop,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: MagSafeChargingRing(
+                percent: percent,
+                charging: _runningRate > 0, // 충전 중일 때만 오라 출력
+                size: ringSize,
+                thickness: ringThick,
+                labelFont: labelFont,
               ),
+            ),
+          ),
 
-              // ------------------ 리스트 섹션 ------------------
-              Positioned(
-                top: sectionTop,
-                left: pageSide,
-                right: pageSide,
-                bottom: listBottom,                    // ★ 리스트 공간 확대
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Today',
-                      style: TextStyle(
-                        fontSize: w * 0.032, // 14
-                        color: const Color(0xFFB0B2C0),
-                        fontWeight: FontWeight.w600,
+          // ------------------ 리스트 섹션 ------------------
+          Positioned(
+            top: sectionTop,
+            left: pageSide,
+            right: pageSide,
+            bottom: listBottom,
+            child: RefreshIndicator(
+              // 아래로 당겼을 때 위치 기반 일정을 다시 동기화한다.
+              onRefresh: () async {
+                final scheduleRepo = ref.read(scheduleRepositoryProvider);
+                try {
+                  await ref
+                      .read(geofenceManagerProvider)
+                      .syncSchedules(scheduleRepo.currentSchedules);
+                } catch (e) {
+                  debugPrint('위치 일정 동기화 실패: $e');
+                }
+                await _saveRemainMap(); // 기존 일정 남은 시간도 함께 저장
+              },
+              // AlwaysScrollableScrollPhysics를 사용하면 내용이 짧아도 당겨서 새로고침 가능
+              child: ListView(
+                padding: EdgeInsets.zero,
+                physics: const AlwaysScrollableScrollPhysics(),
+                children: [
+                  _todaySectionHeader(w),
+                  SizedBox(height: s(context, 8)),
+                  _todayList(
+                    repo,
+                    iconBg,
+                    iconSize,
+                    cardPadding,
+                    titleInCard,
+                    chipFs,
+                    timeFs,
+                    cardRadius,
+                    cardGap,
+                  ),
+                  SizedBox(height: s(context, 16)),
+                  // 위치 기반 일정 섹션: 로딩/에러/데이터 상태에 따라 다른 위젯을 그린다.
+                  schedulesAsync.when(
+                    loading: () => const Center(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(vertical: 24),
+                        child: CircularProgressIndicator(),
                       ),
                     ),
-                    SizedBox(height: s(context, 8)),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          '일정',
-                          style: TextStyle(
-                            fontSize: w * 0.048, // 기존 22 → 약 20
-                            fontWeight: FontWeight.w700,
-                            color: const Color(0xFF111118),
-                          ),
-                        ),
-                        GestureDetector(
-                          onTap: () => Navigator.pushNamed(context, '/events'),
-                          child: Text(
-                            'See All',
-                            style: TextStyle(
-                              fontSize: w * 0.037, // 14
-                              color: const Color(0xFF9FA2B2),
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    SizedBox(height: s(context, 8)),
-                    Expanded(
-                      child: ListView.separated(
-                        padding: EdgeInsets.zero,
-                        itemCount: repo.events.length > 4 ? 4 : repo.events.length,
-                        itemBuilder: (context, index) {
-                          final e = repo.events[index];
-                          final running = _runningId == e.id;
-                          final base = e.endAt.difference(e.startAt);
-                          final remain = running ? _remain : _remainMap[e.id] ?? base;
-                          final rate = _rateFor(e, repo);
-                          final isProtected =
-                              repo.isProtectedEvent(e.id); // 기본 일정 여부 확인
-
-                          return Dismissible(
-                            key: ValueKey(e.id),
-                            // 기본 일정은 삭제 스와이프를 막기 위해 방향을 none으로 설정한다.
-                            direction: isProtected
-                                ? DismissDirection.none
-                                : DismissDirection.endToStart,
-                            background: Container(
-                              alignment: Alignment.centerRight,
-                              padding: const EdgeInsets.only(right: 20),
-                              color: Colors.red,
-                              child: const Icon(Icons.delete, color: Colors.white),
-                            ),
-                            // 삭제 시도 전 확인 로직: 기본 일정이면 스낵바로 안내하고 취소한다.
-                            confirmDismiss: (_) async {
-                              if (isProtected) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('기본 일정은 삭제할 수 없습니다.'),
-                                  ),
-                                );
-                                return false;
-                              }
-                              return true;
-                            },
-                            onDismissed: (_) async {
-                              if (isProtected) return; // 안전망: 혹시 모를 호출을 한 번 더 차단
-                              if (running) await _stopEvent();
-                              try {
-                                await ref.read(notificationProvider).cancel(e.id.hashCode);
-                              } catch (_) {}
-                              await ref.read(repositoryProvider).deleteEvent(e.id);
-                              setState(() {
-                                _remainMap.remove(e.id);
-                              });
-                              await _saveRemainMap();
-                            },
-                            child: _EventTile.scaled(
-                              event: e,
-                              running: running,
-                              remain: remain,
-                              rate: rate,
-                              onPressed: () async {
-                                if (running) {
-                                  await _stopEvent();
-                                } else {
-                                  await _startEvent(e);
-                                }
-                              },
-                              onTap: () => _openDetail(e),
-                              iconBg: iconBg,
-                              iconSize: iconSize,
-                              cardPadding: cardPadding,
-                              titleFs: titleInCard,
-                              chipFs: chipFs,
-                              timeFs: timeFs,
-                              cardRadius: cardRadius,
-                              cardGap: cardGap,
-                            ),
-                          );
-                        },
-                        separatorBuilder: (_, __) => SizedBox(height: s(context, 8)),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // ------------------ 하단 탭바 (작게 & 더 아래로) ------------------
-              Positioned(
-                left: s(context, 50),                  // ★ 좌우 간격 축소
-                right: s(context, 50),
-                bottom: s(context, 1),                 // ★ 거의 바닥에 붙임
-                child: SizedBox(
-                  height: tabH,                        // ★ 표시 높이 제한
-                  child: Transform.scale(
-                    scale: tabScale,                   // ★ 전체 스케일 다운
-                    alignment: Alignment.bottomCenter,
-                    // 하단 탭바: + 버튼과 시계 아이콘에 기능을 연결한다.
-                    child: LifeTabBar(
-                      onAdd: () async {
-                        await Navigator.pushNamed(context, '/event');
-                        if (mounted) setState(() {});
-                      },
-                      onClock: () async {
-                        // 왼쪽 시계 아이콘을 누르면 작업 화면으로 이동
-                        await Navigator.pushNamed(context, '/tasks');
-                        if (mounted) setState(() {});
-                      },
-                    ),
+                    error: (e, _) => _locationError(e),
+                    data: (schedules) => _locationScheduleSection(schedules),
                   ),
+                ],
+              ),
+            ),
+          ),
+
+          // ------------------ 하단 탭바 ------------------
+          Positioned(
+            left: s(context, 50),
+            right: s(context, 50),
+            bottom: s(context, 1),
+            child: SizedBox(
+              height: tabH,
+              child: Transform.scale(
+                scale: tabScale,
+                alignment: Alignment.bottomCenter,
+                child: LifeTabBar(
+                  onAdd: () async {
+                    // + 버튼은 위치 기반 일정 추가 화면으로 이동하도록 변경
+                    context.push('/schedule/new');
+                  },
+                  onClock: () async {
+                    // 작업/기록 화면 등 기존 네비게이션은 유지
+                    await Navigator.pushNamed(context, '/tasks');
+                    if (mounted) setState(() {});
+                  },
                 ),
               ),
-            ],
-          );
-        },
+            ),
+          ),
+        ],
       ),
     );
   }
+
+  // ---------- Today 섹션 헤더 ----------
+  Widget _todaySectionHeader(double w) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Today',
+          style: TextStyle(
+            fontSize: w * 0.032, // 디자인 비율에 맞춘 폰트 크기
+            color: const Color(0xFFB0B2C0),
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        SizedBox(height: s(context, 8)),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              '일정',
+              style: TextStyle(
+                fontSize: w * 0.048,
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF111118),
+              ),
+            ),
+            GestureDetector(
+              onTap: () => Navigator.pushNamed(context, '/events'),
+              child: Text(
+                'See All',
+                style: TextStyle(
+                  fontSize: w * 0.037,
+                  color: const Color(0xFF9FA2B2),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  // ---------- Today 일정 카드 리스트 ----------
+  Widget _todayList(
+    AppRepository repo,
+    double iconBg,
+    double iconSize,
+    double cardPadding,
+    double titleInCard,
+    double chipFs,
+    double timeFs,
+    double cardRadius,
+    double cardGap,
+  ) {
+    return ListView.separated(
+      shrinkWrap: true, // 부모 ListView 안에서도 스크롤이 겹치지 않도록 처리
+      physics: const NeverScrollableScrollPhysics(),
+      padding: EdgeInsets.zero,
+      itemCount: repo.events.length > 4 ? 4 : repo.events.length,
+      itemBuilder: (context, index) {
+        final e = repo.events[index];
+        final running = _runningId == e.id;
+        final base = e.endAt.difference(e.startAt);
+        final remain = running ? _remain : _remainMap[e.id] ?? base;
+        final rate = _rateFor(e, repo);
+        final isProtected = repo.isProtectedEvent(e.id);
+
+        return Dismissible(
+          key: ValueKey(e.id),
+          direction:
+              isProtected ? DismissDirection.none : DismissDirection.endToStart,
+          background: Container(
+            alignment: Alignment.centerRight,
+            padding: const EdgeInsets.only(right: 20),
+            color: Colors.red,
+            child: const Icon(Icons.delete, color: Colors.white),
+          ),
+          confirmDismiss: (_) async {
+            if (isProtected) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('기본 일정은 삭제할 수 없습니다.')),
+              );
+              return false;
+            }
+            return true;
+          },
+          onDismissed: (_) async {
+            if (isProtected) return;
+            if (running) await _stopEvent();
+            try {
+              await ref.read(notificationProvider).cancel(e.id.hashCode);
+            } catch (_) {}
+            await ref.read(repositoryProvider).deleteEvent(e.id);
+            setState(() {
+              _remainMap.remove(e.id);
+            });
+            await _saveRemainMap();
+          },
+          child: _EventTile.scaled(
+            event: e,
+            running: running,
+            remain: remain,
+            rate: rate,
+            onPressed: () async {
+              if (running) {
+                await _stopEvent();
+              } else {
+                await _startEvent(e);
+              }
+            },
+            onTap: () => _openDetail(e),
+            iconBg: iconBg,
+            iconSize: iconSize,
+            cardPadding: cardPadding,
+            titleFs: titleInCard,
+            chipFs: chipFs,
+            timeFs: timeFs,
+            cardRadius: cardRadius,
+            cardGap: cardGap,
+          ),
+        );
+      },
+      separatorBuilder: (_, __) => SizedBox(height: s(context, 8)),
+    );
+  }
+
+  // ---------- 위치 기반 일정: 에러 화면 ----------
+  Widget _locationError(Object err) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 24),
+      child: Column(
+        children: [
+          const Icon(Icons.error_outline, color: Colors.redAccent, size: 48),
+          const SizedBox(height: 8),
+          Text(
+            '위치 기반 일정을 불러오지 못했습니다\n$err',
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          FilledButton(
+            onPressed: _prepareLocationSchedules,
+            child: const Text('권한 확인 및 다시 시도'),
+          )
+        ],
+      ),
+    );
+  }
+
+  // ---------- 위치 기반 일정 섹션 ----------
+  Widget _locationScheduleSection(List<Schedule> schedules) {
+    final now = DateTime.now();
+    final today = schedules
+        .where((s) => _isSameDay(s.startAt, now))
+        .toList(growable: false);
+    final upcoming = schedules
+        .where((s) => s.startAt.isAfter(now) && !_isSameDay(s.startAt, now))
+        .toList(growable: false);
+    final df = DateFormat('MM/dd HH:mm');
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Divider(height: 32),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text('위치 기반 일정',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            IconButton(
+              tooltip: '설정',
+              onPressed: () => context.push('/settings'),
+              icon: const Icon(Icons.settings),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+
+        if (schedules.isEmpty)
+          _emptyLocationPlaceholder()
+        else ...[
+          if (today.isNotEmpty) ...[
+            const Text('오늘', style: TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 6),
+            ...today.map((s) => _locationTile(s, df)),
+            const SizedBox(height: 12),
+          ],
+          const Text('다가오는 일정',
+              style: TextStyle(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 6),
+          if (upcoming.isEmpty)
+            const Text('등록된 향후 일정이 없습니다. 아래 버튼으로 추가해보세요.'),
+          ...upcoming.map((s) => _locationTile(s, df)),
+          const SizedBox(height: 8),
+          FilledButton.icon(
+            onPressed: () => context.push('/schedule/new'),
+            icon: const Icon(Icons.add_location_alt_outlined),
+            label: const Text('위치 일정 추가'),
+          ),
+        ],
+      ],
+    );
+  }
+
+  // ---------- 위치 기반 일정이 하나도 없을 때 표시할 안내 ----------
+  Widget _emptyLocationPlaceholder() {
+    return Column(
+      children: [
+        const SizedBox(height: 8),
+        const Text('아직 위치 기반 일정이 없습니다.'),
+        const SizedBox(height: 8),
+        FilledButton.icon(
+          onPressed: () => context.push('/schedule/new'),
+          icon: const Icon(Icons.add_location_alt_outlined),
+          label: const Text('첫 일정 만들기'),
+        ),
+      ],
+    );
+  }
+
+  // ---------- 위치 기반 일정 카드 ----------
+  Widget _locationTile(Schedule s, DateFormat df) {
+    final radius = (s.radiusMeters ?? 150).toStringAsFixed(0);
+    final place = s.placeName ?? '좌표';
+    final useLoc =
+        s.useLocation ? '$place · 반경 ${radius}m' : '위치 사용 안 함';
+    return Card(
+      elevation: 1,
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      child: ListTile(
+        title: Text(s.title),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('${df.format(s.startAt)} ~ ${df.format(s.endAt)}'),
+            Text(useLoc),
+            Text('트리거: ${s.triggerType.koLabel}, 조건: ${s.dayCondition.koLabel}'),
+          ],
+        ),
+        trailing: s.executed
+            ? const Icon(Icons.check_circle, color: Colors.green)
+            : const Icon(Icons.notifications_active, color: Colors.orange),
+        onTap: () => context.push('/schedule/${s.id}'),
+      ),
+    );
+  }
+
+  /// 두 날짜가 같은 날인지 비교하는 간단한 헬퍼
+  bool _isSameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
 }
 
 // ===================== 일정 카드 =====================
