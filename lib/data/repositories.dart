@@ -36,6 +36,18 @@ class AppRepository extends ChangeNotifier {
   Map<String, String> eventIcons = {}; // 이벤트 ID별 아이콘 이름을 따로 저장
   Map<String, String> eventColors = {}; // 이벤트 ID별 색상 이름을 따로 저장
 
+  /// ID를 이용해 특정 이벤트를 찾아주는 헬퍼 메서드
+  ///
+  /// - 일정 상세 화면 등에서 전달받은 ID로 기존 데이터를 불러올 때 사용한다.
+  /// - 일치하는 일정이 없다면 null을 반환해 "신규 등록" 플로우가 자연스럽게 이어지도록 한다.
+  Event? findEventById(String id) {
+    try {
+      return events.firstWhere((event) => event.id == id);
+    } catch (_) {
+      return null; // 목록에 없으면 null을 반환해 호출측에서 후속 처리를 하도록 위임한다.
+    }
+  }
+
   // 특정 ID가 기본 제공 일정인지 확인하는 헬퍼. UI나 삭제 로직에서 재사용된다.
   bool isProtectedEvent(String id) => _protectedEventIds.contains(id);
 

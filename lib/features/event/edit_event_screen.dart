@@ -1,10 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
+
+import '../../core/compute.dart';
 import '../../data/models.dart';
 import '../../data/repositories.dart';
-import '../../core/compute.dart';
-import 'event_icons.dart';
+import '../../data/schedule_models.dart';
+import '../../data/schedule_repository.dart';
+import '../../services/geofence_manager.dart';
+import '../schedule/widgets/map_preview.dart';
 import 'event_colors.dart';
+import 'event_icons.dart';
 
 /// 일정 등록/수정 화면
 /// - 제목, 내용, 소요 시간, 배터리 변화를 입력받아 이벤트를 저장하거나 수정
@@ -199,6 +205,24 @@ class _EditEventState extends ConsumerState<EditEventScreen> {
   _IntensityLevel _selectedIntensity =
       _IntensityLevel.medium; // 기본 업무 강도 (보통)
 
+  // --- 위치 기반 일정과 연동하기 위한 추가 상태 ---
+  final _placeController = TextEditingController(); // 장소명 입력 필드
+  final _latController = TextEditingController(); // 위도 입력 필드
+  final _lngController = TextEditingController(); // 경도 입력 필드
+  bool _useLocation = false; // 위치 기반 알림 사용 여부
+  double? _lat; // 사용자가 설정한 위도
+  double? _lng; // 사용자가 설정한 경도
+  double _radius = 150; // 지오펜스 반경 (미터)
+  ScheduleTriggerType _triggerType = ScheduleTriggerType.arrive; // 도착/이탈 트리거
+  ScheduleDayCondition _dayCondition = ScheduleDayCondition.always; // 요일 조건
+  SchedulePresetType _presetType = SchedulePresetType.move; // 알림 문구 프리셋
+  bool _remindIfNotExecuted = true; // 미실행 시 반복 알림 여부
+  bool _scheduleExecuted = false; // 기존 일정이 이미 실행 완료인지 기록
+  DateTime? _scheduleCreatedAt; // 기존 일정 생성 시각(없으면 새로 생성)
+  Schedule? _loadedSchedule; // 로딩된 위치 기반 일정 정보 (null이면 새로 생성)
+  bool _saving = false; // 저장 버튼 중복 클릭 방지용 플래그
+  bool _gettingLocation = false; // 현재 위치 읽기 진행 상태
+
   // 강도 추정 시 사용할 허용 오차 (floating point 보정용)
   static const double _intensityTolerance = 0.01;
 
@@ -227,6 +251,20 @@ class _EditEventState extends ConsumerState<EditEventScreen> {
     } else {
       _useManualBatteryInput = false; // 신규 등록 시 기본적으로 자동 계산 사용
     }
+
+    if (e != null) {
+      // 위치 기반 일정과 연동되어 있다면 추가 정보를 비동기로 불러온다.
+      Future.microtask(() => _loadLinkedSchedule(e.id));
+    }
+  }
+
+  @override
+  void dispose() {
+    // 위치 입력용 컨트롤러는 메모리 누수를 막기 위해 반드시 해제한다.
+    _placeController.dispose();
+    _latController.dispose();
+    _lngController.dispose();
+    super.dispose();
   }
 
   /// 저장된 시간당 변화율이 강도 옵션 중 하나와 가까운지 확인하는 헬퍼
@@ -271,6 +309,99 @@ class _EditEventState extends ConsumerState<EditEventScreen> {
     final amount = change.abs();
     final perHour = amount / (_minutes / 60.0);
     return '예상 배터리 변화: $action $sign${amount.toStringAsFixed(1)}% (시간당 $sign${perHour.toStringAsFixed(1)}%)';
+  }
+
+  /// 기존 이벤트와 연결된 위치 기반 일정이 있다면 정보를 불러와 폼에 채워 넣는다.
+  Future<void> _loadLinkedSchedule(String eventId) async {
+    final repo = ref.read(scheduleRepositoryProvider);
+    final schedule = await repo.findById(eventId);
+    if (!mounted || schedule == null) {
+      return; // 연동된 위치 일정이 없다면 그대로 종료
+    }
+    setState(() {
+      _useLocation = schedule.useLocation;
+      _placeController.text = schedule.placeName ?? '';
+      _lat = schedule.lat;
+      _lng = schedule.lng;
+      _latController.text = schedule.lat?.toStringAsFixed(6) ?? '';
+      _lngController.text = schedule.lng?.toStringAsFixed(6) ?? '';
+      _radius = schedule.radiusMeters ?? 150;
+      _triggerType = schedule.triggerType;
+      _dayCondition = schedule.dayCondition;
+      _presetType = schedule.presetType;
+      _remindIfNotExecuted = schedule.remindIfNotExecuted;
+      _scheduleExecuted = schedule.executed;
+      _scheduleCreatedAt = schedule.createdAt;
+      _loadedSchedule = schedule;
+    });
+  }
+
+  /// 현재 위치 버튼을 눌렀을 때 호출되는 함수. 지오로케이터를 이용해 좌표를 갱신한다.
+  Future<void> _setCurrentLocation() async {
+    try {
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.deniedForever) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('위치 권한이 영구적으로 거부되었습니다. 설정에서 허용해주세요.')),
+        );
+        return;
+      }
+      final enabled = await Geolocator.isLocationServiceEnabled();
+      if (!enabled) {
+        await Geolocator.openLocationSettings();
+        return; // 사용자가 설정을 켤 수 있도록 시스템 설정 화면으로 이동
+      }
+
+      setState(() => _gettingLocation = true); // 저장 버튼이 비활성화되도록 상태 갱신
+      final position =
+          await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+      if (!mounted) return;
+      setState(() {
+        _lat = position.latitude;
+        _lng = position.longitude;
+        _latController.text = _lat!.toStringAsFixed(6);
+        _lngController.text = _lng!.toStringAsFixed(6);
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('현재 위치를 가져오지 못했습니다: $e')));
+    } finally {
+      if (mounted) {
+        setState(() => _gettingLocation = false);
+      }
+    }
+  }
+
+  /// 위치 기반 일정 옵션에 공통으로 사용하는 라디오 리스트 UI를 생성한다.
+  Widget _buildScheduleRadioSection<T>({
+    required String title,
+    required List<T> values,
+    required T groupValue,
+    required String Function(T) labelBuilder,
+    required ValueChanged<T> onChanged,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+        const SizedBox(height: 4),
+        for (final value in values)
+          RadioListTile<T>(
+            contentPadding: EdgeInsets.zero,
+            title: Text(labelBuilder(value)),
+            value: value,
+            groupValue: groupValue,
+            onChanged: (v) {
+              if (v != null) onChanged(v);
+            },
+          ),
+      ],
+    );
   }
 
   @override
@@ -401,6 +532,136 @@ class _EditEventState extends ConsumerState<EditEventScreen> {
               ],
             ),
             const SizedBox(height: 16),
+            const Divider(),
+            const SizedBox(height: 16),
+            // ================= 위치 기반 일정 옵션 =================
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '위치 기반 알림',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  '특정 장소에 도착하거나 이탈했을 때 자동으로 일정을 알려주고 싶다면 아래 옵션을 켜주세요.',
+                  style: TextStyle(color: Color(0xFF55586A)),
+                ),
+                SwitchListTile.adaptive(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('위치 기반 알림 사용'),
+                  subtitle: const Text('지오펜스를 만들어 도착/이탈 시 알림을 받습니다.'),
+                  value: _useLocation,
+                  onChanged: (value) {
+                    setState(() => _useLocation = value);
+                  },
+                ),
+                if (_useLocation) ...[
+                  TextField(
+                    controller: _placeController,
+                    decoration: const InputDecoration(
+                      labelText: '장소명 (선택)',
+                      helperText: '예: 회사, 헬스장 등. 입력하지 않으면 좌표만 사용합니다.',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _latController,
+                          decoration: const InputDecoration(labelText: '위도'),
+                          keyboardType:
+                              const TextInputType.numberWithOptions(decimal: true),
+                          onChanged: (value) {
+                            setState(() {
+                              _lat = double.tryParse(value.replaceAll(',', '.'));
+                            });
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: _lngController,
+                          decoration: const InputDecoration(labelText: '경도'),
+                          keyboardType:
+                              const TextInputType.numberWithOptions(decimal: true),
+                          onChanged: (value) {
+                            setState(() {
+                              _lng = double.tryParse(value.replaceAll(',', '.'));
+                            });
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    onPressed: _gettingLocation ? null : _setCurrentLocation,
+                    icon: const Icon(Icons.my_location),
+                    label: Text(_gettingLocation ? '현재 위치 확인 중...' : '현재 위치로 좌표 설정'),
+                  ),
+                  const SizedBox(height: 12),
+                  Slider(
+                    value: _radius,
+                    min: 50,
+                    max: 300,
+                    divisions: 5,
+                    label: '${_radius.toStringAsFixed(0)}m',
+                    onChanged: (value) {
+                      setState(() => _radius = value);
+                    },
+                  ),
+                  const Text(
+                    '반경은 알림을 울리고 싶은 범위를 의미합니다. 숫자가 커질수록 더 넓은 영역에서 감지합니다.',
+                    style: TextStyle(color: Color(0xFF55586A)),
+                  ),
+                  const SizedBox(height: 12),
+                  MapPreview(lat: _lat, lng: _lng, radius: _radius),
+                  const SizedBox(height: 16),
+                  _buildScheduleRadioSection<ScheduleTriggerType>(
+                    title: '트리거 유형',
+                    values: ScheduleTriggerType.values,
+                    groupValue: _triggerType,
+                    labelBuilder: (value) => (value as Enum).koLabel,
+                    onChanged: (value) {
+                      setState(() => _triggerType = value);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  _buildScheduleRadioSection<ScheduleDayCondition>(
+                    title: '요일/공휴일 조건',
+                    values: ScheduleDayCondition.values,
+                    groupValue: _dayCondition,
+                    labelBuilder: (value) => (value as Enum).koLabel,
+                    onChanged: (value) {
+                      setState(() => _dayCondition = value);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  _buildScheduleRadioSection<SchedulePresetType>(
+                    title: '알림 문구 프리셋',
+                    values: SchedulePresetType.values,
+                    groupValue: _presetType,
+                    labelBuilder: (value) => (value as Enum).koLabel,
+                    onChanged: (value) {
+                      setState(() => _presetType = value);
+                    },
+                  ),
+                  SwitchListTile.adaptive(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('미실행 시 알림 유지'),
+                    subtitle: const Text('알림을 확인했어도 직접 완료 처리할 때까지 반복됩니다.'),
+                    value: _remindIfNotExecuted,
+                    onChanged: (value) {
+                      setState(() => _remindIfNotExecuted = value);
+                    },
+                  ),
+                ],
+              ],
+            ),
+            const SizedBox(height: 16),
             // 아이콘 선택 영역 (여러 후보 중 하나 선택)
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -455,41 +716,110 @@ class _EditEventState extends ConsumerState<EditEventScreen> {
             const SizedBox(height: 20),
             // 저장 버튼
             ElevatedButton(
-              onPressed: () {
-                FocusScope.of(context).unfocus(); // 저장 시 키보드를 닫아준다.
-                if (!(_formKey.currentState?.validate() ?? false)) {
-                  return; // 검증 실패 시 저장을 중단한다.
-                }
-                final minutes = _minutes > 0 ? _minutes : 0; // 혹시 모를 음수 입력 방어
-                final start =
-                    widget.event?.startAt ?? DateTime.now(); // 기존 일정이면 시작 시각 유지
-                final end = start.add(Duration(minutes: minutes)); // 종료 시각 계산
-                final change = _calculateBatteryChange(); // 총 배터리 변화(부호 포함)
-                final double rate = minutes > 0
-                    ? change / (minutes / 60)
-                    : 0.0; // 분 단위를 시간으로 환산해 시간당 변화율 산출
+              onPressed: _saving
+                  ? null
+                  : () async {
+                      FocusScope.of(context).unfocus(); // 저장 시 키보드를 닫아준다.
+                      if (!(_formKey.currentState?.validate() ?? false)) {
+                        return; // 검증 실패 시 저장을 중단한다.
+                      }
+                      if (_useLocation && (_lat == null || _lng == null)) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('좌표를 입력하거나 현재 위치를 설정해주세요.')),
+                        );
+                        return;
+                      }
 
-                // 이벤트 생성 (신규/수정 공용)
-                final e = Event(
-                  id: widget.event?.id ??
-                      DateTime.now().microsecondsSinceEpoch.toString(),
-                  title: _title,
-                  content: _content,
-                  startAt: start,
-                  endAt: end,
-                  type: widget.event?.type ?? EventType.neutral,
-                  ratePerHour: rate,
-                  priority:
-                      widget.event?.priority ?? defaultPriority(EventType.neutral),
-                  createdAt: widget.event?.createdAt ?? DateTime.now(),
-                  updatedAt: DateTime.now(),
-                  iconName: _iconName, // 사용자가 고른 아이콘을 함께 저장
-                  colorName: _colorName, // 사용자가 고른 색상도 함께 저장
-                );
-                repo.saveEvent(e); // 이벤트 저장/수정
-                Navigator.pop(context); // 이전 화면으로 복귀
-              },
-              child: Text(widget.event == null ? '저장' : '수정'),
+                      setState(() => _saving = true); // 저장 중임을 표시
+                      final now = DateTime.now();
+                      final minutes = _minutes > 0 ? _minutes : 0; // 혹시 모를 음수 입력 방어
+                      final start = widget.event?.startAt ?? now; // 기존 일정이면 시작 시각 유지
+                      final end = start.add(Duration(minutes: minutes)); // 종료 시각 계산
+                      final change = _calculateBatteryChange(); // 총 배터리 변화(부호 포함)
+                      final double rate = minutes > 0
+                          ? change / (minutes / 60)
+                          : 0.0; // 분 단위를 시간으로 환산해 시간당 변화율 산출
+                      final eventId = widget.event?.id ??
+                          DateTime.now().microsecondsSinceEpoch.toString();
+
+                      // 이벤트 생성 (신규/수정 공용)
+                      final e = Event(
+                        id: eventId,
+                        title: _title,
+                        content: _content,
+                        startAt: start,
+                        endAt: end,
+                        type: widget.event?.type ?? EventType.neutral,
+                        ratePerHour: rate,
+                        priority:
+                            widget.event?.priority ?? defaultPriority(EventType.neutral),
+                        createdAt: widget.event?.createdAt ?? now,
+                        updatedAt: now,
+                        iconName: _iconName, // 사용자가 고른 아이콘을 함께 저장
+                        colorName: _colorName, // 사용자가 고른 색상도 함께 저장
+                      );
+
+                      final scheduleRepo = ref.read(scheduleRepositoryProvider);
+                      final geofenceManager = ref.read(geofenceManagerProvider);
+
+                      try {
+                        await repo.saveEvent(e); // 이벤트 저장/수정
+
+                        if (_useLocation) {
+                          // 위치 기반 알림을 사용한다면 Schedule 모델을 생성해 함께 저장한다.
+                          final schedule = Schedule(
+                            id: eventId, // 이벤트와 동일한 ID를 사용해 연동을 단순화한다.
+                            title: e.title,
+                            startAt: start,
+                            endAt: end,
+                            useLocation: true,
+                            placeName:
+                                _placeController.text.trim().isEmpty ? null : _placeController.text.trim(),
+                            lat: _lat,
+                            lng: _lng,
+                            radiusMeters: _radius,
+                            triggerType: _triggerType,
+                            dayCondition: _dayCondition,
+                            presetType: _presetType,
+                            remindIfNotExecuted: _remindIfNotExecuted,
+                            executed: _scheduleExecuted,
+                            createdAt: _loadedSchedule?.createdAt ?? _scheduleCreatedAt ?? now,
+                            updatedAt: now,
+                          );
+                          await scheduleRepo.saveSchedule(schedule);
+                          await scheduleRepo.addLog('이벤트와 연동된 일정 저장: ${schedule.title}',
+                              scheduleId: schedule.id);
+                          await geofenceManager.applySchedule(schedule);
+                        } else {
+                          // 위치 기능을 사용하지 않는다면 기존에 저장된 일정을 정리한다.
+                          final existing =
+                              _loadedSchedule ?? await scheduleRepo.findById(eventId);
+                          if (existing != null) {
+                            await scheduleRepo.deleteSchedule(existing.id);
+                            await scheduleRepo.addLog('이벤트 연동 일정 삭제: ${existing.title}',
+                                scheduleId: existing.id);
+                            await geofenceManager.removeSchedule(existing.id);
+                          }
+                        }
+
+                        if (!mounted) return;
+                        Navigator.pop(context); // 이전 화면으로 복귀
+                      } catch (e) {
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('일정 저장 중 문제가 발생했습니다: $e')),
+                        );
+                      } finally {
+                        if (mounted) {
+                          setState(() => _saving = false);
+                        }
+                      }
+                    },
+              child: Text(_saving
+                  ? '저장 중...'
+                  : widget.event == null
+                      ? '저장'
+                      : '수정'),
             )
           ],
         ),
