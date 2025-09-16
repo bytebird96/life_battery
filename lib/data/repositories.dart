@@ -1,5 +1,6 @@
 import 'dart:convert'; // Map을 JSON 문자열로 저장하기 위한 패키지
 
+import 'package:flutter/foundation.dart'; // ChangeNotifier 사용을 위해 추가
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:drift/drift.dart' as dr; // SQL 실행을 위한 Drift 유틸
 import 'package:shared_preferences/shared_preferences.dart'; // 로컬 저장소 접근
@@ -9,13 +10,19 @@ import 'models.dart';
 import 'app_db.dart' as db; // Drift에서 생성된 클래스와 이름 충돌 방지
 
 /// 리포지토리 프로바이더
-final repositoryProvider = Provider<AppRepository>((ref) => throw UnimplementedError());
+///
+/// - ChangeNotifierProvider로 선언해 `notifyListeners()` 호출 시 UI가 자동 갱신되도록 한다.
+final repositoryProvider =
+    ChangeNotifierProvider<AppRepository>((ref) => throw UnimplementedError());
 
 /// 간단한 리포지토리 구현
-class AppRepository {
+class AppRepository extends ChangeNotifier {
   // 기본 제공 일정의 ID를 상수로 관리하여 어디서든 동일한 값을 사용할 수 있게 한다.
   static const String commuteEventId = 'default-commute';
   static const String sleepEventId = 'default-sleep';
+
+  /// Settings 테이블은 단 하나의 레코드만 사용하므로 고정 ID를 부여한다.
+  static const int _settingsRowId = 1;
 
   // 삭제가 금지된 일정 ID를 모아 둔 집합. 새로운 기본 일정이 생기면 여기에만 추가하면 된다.
   static const Set<String> _protectedEventIds = {
@@ -34,6 +41,12 @@ class AppRepository {
 
   Future<void> init() async {
     _db = db.AppDb(); // 로컬 데이터베이스 초기화
+
+    // ------------------------------
+    // Settings 테이블에 저장된 사용자 설정을 가장 먼저 읽어와 기본값을 반영한다.
+    // 값이 없다면 현재 메모리의 기본 설정을 저장해 최초 레코드를 만든다.
+    // ------------------------------
+    await _loadSettingsFromDb();
 
     // ------------------------------
     // 앱 재시작 시 마지막 배터리 퍼센트를 복원하기 위해
@@ -139,6 +152,9 @@ class AppRepository {
         e.updatedAt.millisecondsSinceEpoch, // 9. 수정 시각(ms)
       ],
     );
+
+    // 일정이 추가/수정되면 구독 중인 위젯이 즉시 갱신될 수 있도록 알린다.
+    notifyListeners();
   }
 
   /// 이벤트 삭제
@@ -156,6 +172,9 @@ class AppRepository {
 
     // 2. 로컬 데이터베이스에서도 같은 ID의 행을 제거
     await _db.customStatement('DELETE FROM events WHERE id = ?', [id]);
+
+    // 일정이 삭제되었음을 위젯에 알린다.
+    notifyListeners();
   }
 
   /// 아이콘 정보를 SharedPreferences에 저장하는 헬퍼
@@ -177,6 +196,72 @@ class AppRepository {
     final end = start.add(const Duration(days: 1));
     final es = eventsInRange(start, end);
     return simulate(es, settings, start, end);
+  }
+
+  /// 사용자 설정을 DB에 저장하고 UI에 알리는 함수
+  ///
+  /// - settings 필드를 새 값으로 교체한 뒤, Settings 테이블에 upsert한다.
+  Future<void> updateUserSettings(UserSettings updated) async {
+    settings = updated;
+    await _saveSettingsToDb(settings);
+    notifyListeners();
+  }
+
+  /// 작업/휴식/수면 기본 변화량만 간편하게 갱신할 때 사용할 헬퍼
+  Future<void> updateDefaultRates({
+    required double defaultDrainRate,
+    required double defaultRestRate,
+    required double sleepChargeRate,
+  }) async {
+    settings
+      ..defaultDrainRate = defaultDrainRate
+      ..defaultRestRate = defaultRestRate
+      ..sleepChargeRate = sleepChargeRate;
+    await _saveSettingsToDb(settings);
+    notifyListeners();
+  }
+
+  /// DB에서 사용자 설정을 불러와 [settings] 필드를 최신화한다.
+  Future<void> _loadSettingsFromDb() async {
+    try {
+      final query = await (_db.select(_db.settings)
+            ..where((tbl) => tbl.id.equals(_settingsRowId)))
+          .getSingleOrNull();
+      if (query != null) {
+        settings = UserSettings(
+          initialBattery: query.initialBattery,
+          defaultDrainRate: query.defaultDrainRate,
+          defaultRestRate: query.defaultRestRate,
+          sleepFullCharge: query.sleepFullCharge,
+          sleepChargeRate: query.sleepChargeRate,
+          minBatteryForWork: query.minBatteryForWork,
+          dayStart: query.dayStart,
+          overcapAllowed: query.overcapAllowed,
+        );
+      } else {
+        // 최초 실행이라면 현재 메모리 값을 그대로 저장해 테이블을 초기화한다.
+        await _saveSettingsToDb(settings);
+      }
+    } catch (e) {
+      debugPrint('설정 로딩 실패: $e');
+    }
+  }
+
+  /// Settings 테이블에 현재 설정을 upsert한다.
+  Future<void> _saveSettingsToDb(UserSettings source) async {
+    await _db
+        .into(_db.settings)
+        .insertOnConflictUpdate(db.SettingsCompanion.insert(
+          id: dr.Value(_settingsRowId),
+          initialBattery: source.initialBattery,
+          defaultDrainRate: source.defaultDrainRate,
+          defaultRestRate: source.defaultRestRate,
+          sleepFullCharge: source.sleepFullCharge,
+          sleepChargeRate: source.sleepChargeRate,
+          minBatteryForWork: source.minBatteryForWork,
+          dayStart: source.dayStart,
+          overcapAllowed: source.overcapAllowed,
+        ));
   }
 
   // 출근/수면 기본 일정을 DB와 메모리에 보장하는 헬퍼. 여러 번 호출되어도 중복 저장되지 않는다.

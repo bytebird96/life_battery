@@ -68,6 +68,31 @@ class UserSettings {
     this.dayStart = '05:00',
     this.overcapAllowed = false,
   });
+
+  /// copyWith를 제공해 UI나 저장소에서 일부 값만 변경할 수 있도록 한다.
+  ///
+  /// - 초보자도 직관적으로 이해할 수 있게, 필요한 값만 전달하면 나머지는 기존 값이 유지된다.
+  UserSettings copyWith({
+    double? initialBattery,
+    double? defaultDrainRate,
+    double? defaultRestRate,
+    bool? sleepFullCharge,
+    double? sleepChargeRate,
+    double? minBatteryForWork,
+    String? dayStart,
+    bool? overcapAllowed,
+  }) {
+    return UserSettings(
+      initialBattery: initialBattery ?? this.initialBattery,
+      defaultDrainRate: defaultDrainRate ?? this.defaultDrainRate,
+      defaultRestRate: defaultRestRate ?? this.defaultRestRate,
+      sleepFullCharge: sleepFullCharge ?? this.sleepFullCharge,
+      sleepChargeRate: sleepChargeRate ?? this.sleepChargeRate,
+      minBatteryForWork: minBatteryForWork ?? this.minBatteryForWork,
+      dayStart: dayStart ?? this.dayStart,
+      overcapAllowed: overcapAllowed ?? this.overcapAllowed,
+    );
+  }
 }
 
 /// 우선순위 해소 후 구간

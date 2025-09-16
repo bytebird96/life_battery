@@ -9,7 +9,7 @@ void main() {
     final repo = AppRepository();
     await repo.init();
     await tester.pumpWidget(ProviderScope(overrides: [
-      repositoryProvider.overrideWithValue(repo)
+      repositoryProvider.overrideWith((ref) => repo)
     ], child: const EnergyBatteryApp()));
 
     // 초기 배터리 80% 확인

@@ -6,6 +6,9 @@ import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import '../../core/units.dart';
+import '../../data/models.dart';
+import '../../data/repositories.dart';
 import '../../data/schedule_repository.dart';
 import '../../services/geofence_manager.dart';
 import '../../services/holiday_service.dart';
@@ -26,11 +29,30 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   PermissionStatus? _batteryStatus;
   String _holidaySource = '주말 기준 (기본)';
   bool _loading = false;
+  final _settingsFormKey = GlobalKey<FormState>(); // 배터리 기본 설정 폼 키
+  late final TextEditingController _drainController; // 작업(소모) 기본값 입력 필드
+  late final TextEditingController _restController; // 휴식(충전) 기본값 입력 필드
+  late final TextEditingController _sleepController; // 수면(충전) 기본값 입력 필드
 
   @override
   void initState() {
     super.initState();
+    final repo = ref.read(repositoryProvider);
+    _drainController =
+        TextEditingController(text: _formatRate(repo.settings.defaultDrainRate));
+    _restController =
+        TextEditingController(text: _formatRate(repo.settings.defaultRestRate));
+    _sleepController =
+        TextEditingController(text: _formatRate(repo.settings.sleepChargeRate));
     _refreshStatuses();
+  }
+
+  @override
+  void dispose() {
+    _drainController.dispose();
+    _restController.dispose();
+    _sleepController.dispose();
+    super.dispose();
   }
 
   Future<void> _refreshStatuses() async {
@@ -54,7 +76,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final logs = ref.watch(scheduleLogStreamProvider);
-    final repo = ref.watch(scheduleRepositoryProvider);
+    final appRepo = ref.watch(repositoryProvider); // 사용자 설정을 읽기 위해 구독
+    final scheduleRepo = ref.watch(scheduleRepositoryProvider);
     final manager = ref.watch(geofenceManagerProvider);
     return Scaffold(
       appBar: AppBar(
@@ -145,13 +168,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               subtitle: const Text('DB와 등록된 지오펜스 상태를 다시 맞춥니다.'),
               trailing: const Icon(Icons.sync),
               onTap: () async {
-                await manager.syncSchedules(repo.currentSchedules);
+                await manager.syncSchedules(scheduleRepo.currentSchedules);
                 if (!mounted) return;
                 // 동기화 완료 후 사용자에게 안내 메시지를 띄운다.
                 ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('지오펜스를 다시 등록했습니다.')));
               },
             ),
+            const Divider(height: 32),
+            const Text('배터리 기본 설정',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            _buildBatterySettingsSection(appRepo.settings),
             const Divider(height: 32),
             const Text('최근 지오펜스 로그',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
@@ -212,6 +240,221 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             );
           }
         },
+      ),
+    );
+  }
+
+  /// 숫자를 사람이 읽기 좋은 문자열로 변환하는 헬퍼
+  String _formatRate(double value) {
+    // 소수점이 없는 경우 정수만 보여주고, 그렇지 않으면 소수 둘째 자리까지 표현한다.
+    return (value % 1 == 0) ? value.toStringAsFixed(0) : value.toStringAsFixed(2);
+  }
+
+  /// 문자열을 double로 변환하되, 콤마 입력도 허용한다.
+  double? _parseRate(String value) {
+    final sanitized = value.replaceAll(',', '.').trim();
+    if (sanitized.isEmpty) return null;
+    return double.tryParse(sanitized);
+  }
+
+  /// 분당 변화량 안내 문구를 생성한다.
+  String _perMinuteHelper(double? perHour, {required bool isDrain}) {
+    if (perHour == null) {
+      return '올바른 숫자를 입력하면 분당 변화량을 안내합니다.';
+    }
+    final perMinute = perHourToPerMinute(perHour).abs();
+    final verb = isDrain ? '소모' : '충전';
+    return '분당 약 ${perMinute.toStringAsFixed(2)}% $verb';
+  }
+
+  /// 입력값 검증: 음수나 비정상적인 숫자가 들어오면 사용자에게 안내한다.
+  String? _validateRate(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return '값을 입력해주세요.';
+    }
+    final parsed = _parseRate(value);
+    if (parsed == null) {
+      return '숫자 형태로 입력해주세요.';
+    }
+    if (parsed < 0) {
+      return '0 이상 값을 입력해주세요.';
+    }
+    if (parsed > 100) {
+      return '100%를 넘는 값은 계산이 어렵습니다.';
+    }
+    return null;
+  }
+
+  /// 현재 폼 입력과 저장된 설정을 비교하여 변경사항이 있는지 확인한다.
+  bool _hasUnsavedChanges(UserSettings settings) {
+    final drain = _parseRate(_drainController.text);
+    final rest = _parseRate(_restController.text);
+    final sleep = _parseRate(_sleepController.text);
+    if (drain == null || rest == null || sleep == null) {
+      // 아직 제대로 입력되지 않은 경우도 저장 전 확인이 필요하므로 true 처리
+      return true;
+    }
+    bool diff(double a, double b) => (a - b).abs() > 0.0001;
+    return diff(drain, settings.defaultDrainRate) ||
+        diff(rest, settings.defaultRestRate) ||
+        diff(sleep, settings.sleepChargeRate);
+  }
+
+  /// 리포지토리에 저장된 값으로 입력창을 다시 맞춘다.
+  void _syncControllersFromRepo(UserSettings settings) {
+    _drainController.text = _formatRate(settings.defaultDrainRate);
+    _restController.text = _formatRate(settings.defaultRestRate);
+    _sleepController.text = _formatRate(settings.sleepChargeRate);
+    setState(() {}); // helperText 갱신을 위해 빌드를 요청
+  }
+
+  /// 사용자 입력을 저장소에 반영하고 검증 메시지를 보여준다.
+  Future<void> _saveRateSettings() async {
+    FocusScope.of(context).unfocus(); // 키보드를 숨겨 사용자가 변화를 인지하기 쉽게 한다.
+    final form = _settingsFormKey.currentState;
+    if (form == null) return;
+    if (!form.validate()) {
+      // validator가 자동으로 에러 메시지를 표시하지만, 추가로 스낵바를 통해 알림.
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('입력값을 다시 확인해주세요. 숫자만 입력할 수 있습니다.')),
+      );
+      return;
+    }
+
+    final drain = _parseRate(_drainController.text)!.clamp(0, 100).toDouble();
+    final rest = _parseRate(_restController.text)!.clamp(0, 100).toDouble();
+    final sleep = _parseRate(_sleepController.text)!.clamp(0, 100).toDouble();
+
+    final repo = ref.read(repositoryProvider);
+    await repo.updateDefaultRates(
+      defaultDrainRate: drain,
+      defaultRestRate: rest,
+      sleepChargeRate: sleep,
+    );
+
+    if (!mounted) return;
+    _syncControllersFromRepo(repo.settings);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('배터리 기본 변화량을 저장했습니다. 이제부터 새 계산에 반영됩니다.')),
+    );
+  }
+
+  /// 기본값으로 되돌리는 버튼에 연결될 함수
+  void _restoreDefaultRates() {
+    FocusScope.of(context).unfocus();
+    final defaults = UserSettings();
+    _drainController.text = _formatRate(defaults.defaultDrainRate);
+    _restController.text = _formatRate(defaults.defaultRestRate);
+    _sleepController.text = _formatRate(defaults.sleepChargeRate);
+    setState(() {});
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('기본값으로 되돌렸습니다. 저장 버튼을 눌러야 적용됩니다.')),
+    );
+  }
+
+  /// 배터리 기본 설정 섹션 UI
+  Widget _buildBatterySettingsSection(UserSettings settings) {
+    final hasUnsaved = _hasUnsavedChanges(settings);
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Form(
+          key: _settingsFormKey,
+          autovalidateMode: AutovalidateMode.onUserInteraction,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '작업 · 휴식 · 수면에 별도 배터리 수치가 없을 때 사용할 기본값을 조정할 수 있습니다.',
+                style: TextStyle(fontSize: 14, color: Colors.black87),
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _drainController,
+                decoration: InputDecoration(
+                  labelText: '작업 기본 소모량 (시간당 %)',
+                  hintText: '예: 5',
+                  suffixText: '%/시간',
+                  helperText: _perMinuteHelper(_parseRate(_drainController.text), isDrain: true),
+                  border: const OutlineInputBorder(),
+                ),
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true, signed: false),
+                validator: _validateRate,
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                '작업(EventType.work) 이벤트에 별도 속도가 없다면 이 값이 사용됩니다.',
+                style: TextStyle(fontSize: 12, color: Colors.black54),
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _restController,
+                decoration: InputDecoration(
+                  labelText: '휴식 기본 회복량 (시간당 %)',
+                  hintText: '예: 3',
+                  suffixText: '%/시간',
+                  helperText: _perMinuteHelper(_parseRate(_restController.text), isDrain: false),
+                  border: const OutlineInputBorder(),
+                ),
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true, signed: false),
+                validator: _validateRate,
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                '휴식(EventType.rest) 이벤트에 별도 속도가 없다면 이 값으로 충전량을 계산합니다.',
+                style: TextStyle(fontSize: 12, color: Colors.black54),
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _sleepController,
+                decoration: InputDecoration(
+                  labelText: '수면 기본 회복량 (시간당 %)',
+                  hintText: '예: 12',
+                  suffixText: '%/시간',
+                  helperText:
+                      _perMinuteHelper(_parseRate(_sleepController.text), isDrain: false),
+                  border: const OutlineInputBorder(),
+                ),
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true, signed: false),
+                validator: _validateRate,
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                '수면(EventType.sleep) 이벤트의 기본 충전량을 조절합니다. 밤새 충전량이 너무 크거나 작다면 조절해보세요.',
+                style: TextStyle(fontSize: 12, color: Colors.black54),
+              ),
+              const SizedBox(height: 12),
+              if (hasUnsaved)
+                const Text(
+                  '변경 사항이 있습니다. 아래 "설정 저장" 버튼을 눌러야 다른 화면에 반영됩니다.',
+                  style: TextStyle(color: Colors.deepOrange, fontWeight: FontWeight.w600),
+                ),
+              if (hasUnsaved) const SizedBox(height: 12),
+              Row(
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: _saveRateSettings,
+                    icon: const Icon(Icons.save),
+                    label: const Text('설정 저장'),
+                  ),
+                  const SizedBox(width: 12),
+                  OutlinedButton.icon(
+                    onPressed: _restoreDefaultRates,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('기본값 복원'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

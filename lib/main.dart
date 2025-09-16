@@ -54,7 +54,7 @@ void main() async {
   runApp(
     ProviderScope(
       overrides: [
-        repositoryProvider.overrideWithValue(repo),
+        repositoryProvider.overrideWith((ref) => repo),
         notificationProvider.overrideWithValue(notif),
         holidayServiceProvider.overrideWithValue(holidayService),
         scheduleRepositoryProvider.overrideWithValue(scheduleRepo),
