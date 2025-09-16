@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:go_router/go_router.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../../data/schedule_repository.dart';
@@ -56,7 +57,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final repo = ref.watch(scheduleRepositoryProvider);
     final manager = ref.watch(geofenceManagerProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('설정 및 가이드')),
+      appBar: AppBar(
+        title: const Text('설정 및 가이드'),
+        // 설정 화면도 독립적으로 뒤로가기를 제공해 길을 잃지 않도록 한다.
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          tooltip: '뒤로가기',
+          onPressed: () {
+            // 사용자가 딥링크 등으로 들어온 경우를 대비해 pop이 불가하면 홈으로 이동한다.
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go('/');
+            }
+          },
+        ),
+      ),
       body: RefreshIndicator(
         onRefresh: _refreshStatuses,
         child: ListView(

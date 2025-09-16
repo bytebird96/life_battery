@@ -89,7 +89,22 @@ class _ScheduleEditScreenState extends ConsumerState<ScheduleEditScreen> {
         : ref.watch(scheduleByIdProvider(widget.scheduleId!));
     final titleText = widget.scheduleId == null ? '일정 등록' : '일정 수정';
     return Scaffold(
-      appBar: AppBar(title: Text(titleText)),
+      appBar: AppBar(
+        title: Text(titleText),
+        // 직접 만든 뒤로가기 버튼으로 초보자도 쉽게 이전 화면으로 돌아갈 수 있도록 한다.
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          tooltip: '뒤로가기',
+          onPressed: () {
+            // 외부 딥링크 등으로 바로 진입했을 때는 pop이 안 될 수 있어 홈으로 돌려보낸다.
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go('/');
+            }
+          },
+        ),
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -375,7 +390,12 @@ class _ScheduleEditScreenState extends ConsumerState<ScheduleEditScreen> {
     await manager.applySchedule(schedule);
     if (!mounted) return;
     setState(() => _loading = false);
-    context.pop();
+    // 저장 후에도 되돌아갈 화면이 없다면 홈 화면으로 이동하도록 안전장치를 둔다.
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/');
+    }
   }
 }
 

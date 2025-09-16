@@ -41,9 +41,36 @@ class ScheduleRepository {
 
   List<Schedule> get currentSchedules => List.unmodifiable(_schedules);
 
-  Stream<List<Schedule>> watchSchedules() => _scheduleController.stream;
+  Stream<List<Schedule>> watchSchedules() {
+    return Stream<List<Schedule>>.multi((controller) {
+      // 첫 구독 시 바로 현재 목록을 흘려보내 무한 로딩을 방지한다.
+      controller.add(List.unmodifiable(_schedules));
+      // 이후에는 내부 스트림을 그대로 전달해 변경 사항을 실시간으로 반영한다.
+      final sub = _scheduleController.stream.listen(
+        controller.add,
+        onError: controller.addError,
+        onDone: controller.close,
+      );
+      controller.onCancel = () {
+        sub.cancel();
+      };
+    }, isBroadcast: true);
+  }
 
-  Stream<List<ScheduleLogEntry>> watchLogs() => _logController.stream;
+  Stream<List<ScheduleLogEntry>> watchLogs() {
+    return Stream<List<ScheduleLogEntry>>.multi((controller) {
+      // 로그 또한 새 구독자가 생기면 즉시 현재 캐시된 데이터를 제공한다.
+      controller.add(List.unmodifiable(_logs));
+      final sub = _logController.stream.listen(
+        controller.add,
+        onError: controller.addError,
+        onDone: controller.close,
+      );
+      controller.onCancel = () {
+        sub.cancel();
+      };
+    }, isBroadcast: true);
+  }
 
   Future<List<Schedule>> fetchSchedules() async => List.unmodifiable(_schedules);
 
