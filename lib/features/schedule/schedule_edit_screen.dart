@@ -95,7 +95,14 @@ class _ScheduleEditScreenState extends ConsumerState<ScheduleEditScreen> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           tooltip: '뒤로가기',
-          onPressed: () => context.pop(),
+          onPressed: () {
+            // 외부 딥링크 등으로 바로 진입했을 때는 pop이 안 될 수 있어 홈으로 돌려보낸다.
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go('/');
+            }
+          },
         ),
       ),
       body: ListView(
@@ -383,23 +390,11 @@ class _ScheduleEditScreenState extends ConsumerState<ScheduleEditScreen> {
     await manager.applySchedule(schedule);
     if (!mounted) return;
     setState(() => _loading = false);
-
-    // 저장 후 이동 경로를 결정하기 위해 현재 라우터와 편집 여부를 확인한다.
-    final router = GoRouter.of(context); // 화면 이동을 담당하는 GoRouter 인스턴스
-    final bool isEditing = widget.scheduleId != null; // 기존 일정을 수정 중인지 여부
-    final String destinationPath = '/schedule/${schedule.id}'; // 상세 화면 경로를 미리 만들어 둔다.
-
-    if (isEditing) {
-      // 상세 화면에서 push로 들어온 경우에는 pop으로 돌아가야 자연스럽다.
-      if (router.canPop()) {
-        router.pop(); // 스택에 이전 화면이 남아 있을 때는 해당 화면으로 되돌아간다.
-      } else {
-        // 딥링크나 go()로 진입해 스택이 비어 있으면 pop이 실패하므로, go()로 안전하게 이동한다.
-        router.go(destinationPath);
-      }
+    // 저장 후에도 되돌아갈 화면이 없다면 홈 화면으로 이동하도록 안전장치를 둔다.
+    if (context.canPop()) {
+      context.pop();
     } else {
-      // 신규 생성 화면에서는 항상 저장한 일정의 상세 화면으로 이동한다.
-      router.go(destinationPath);
+      context.go('/');
     }
   }
 }

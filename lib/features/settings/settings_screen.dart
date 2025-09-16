@@ -63,7 +63,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           tooltip: '뒤로가기',
-          onPressed: () => context.pop(),
+          onPressed: () {
+            // 사용자가 딥링크 등으로 들어온 경우를 대비해 pop이 불가하면 홈으로 이동한다.
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go('/');
+            }
+          },
         ),
       ),
       body: RefreshIndicator(

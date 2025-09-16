@@ -31,7 +31,14 @@ class ScheduleDetailScreen extends ConsumerWidget {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           tooltip: '뒤로가기',
-          onPressed: () => context.pop(),
+          onPressed: () {
+            // push가 아닌 go() 등으로 진입했을 수도 있으므로 pop이 불가능한 경우 홈으로 이동시킨다.
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go('/');
+            }
+          },
         ),
         actions: [
           IconButton(
@@ -127,7 +134,12 @@ class ScheduleDetailScreen extends ConsumerWidget {
     await repo.addLog('일정 삭제: ${schedule.title}', scheduleId: schedule.id);
     await manager.removeSchedule(schedule.id);
     if (context.mounted) {
-      context.pop();
+      // 삭제 후에도 뒤로갈 화면이 없을 수 있으니 안전하게 홈으로 이동을 보장한다.
+      if (context.canPop()) {
+        context.pop();
+      } else {
+        context.go('/');
+      }
     }
   }
 }
