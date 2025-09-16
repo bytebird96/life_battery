@@ -98,17 +98,33 @@ class _EnergyBatteryAppState extends ConsumerState<EnergyBatteryApp> {
   @override
   void initState() {
     super.initState();
-    // 알림을 탭하면 해당 일정 상세 화면으로 이동하도록 처리한다.
-    ref.listen<AsyncValue<String>>(notificationTapProvider, (previous, next) {
-      next.whenData((id) {
-        ref.read(routerProvider).go('/schedule/$id');
-      });
+    // ref.listen은 build 메서드 내부에서만 허용되므로, initState에서는 listenManual을 사용해 수동 구독을 만든다.
+    final notificationSubscription = ref.listenManual<AsyncValue<String>>(
+      notificationTapProvider,
+      (previous, next) {
+        // 새 알림을 받으면 해당 일정 상세 화면으로 이동한다.
+        next.whenData((id) {
+          ref.read(routerProvider).go('/schedule/$id');
+        });
+      },
+    );
+    // 위에서 만든 수동 구독을 위젯이 dispose될 때 자동으로 해제한다.
+    ref.onDispose(() {
+      notificationSubscription.close();
     });
-    // 일정 목록이 변경될 때마다 지오펜스 등록 상태를 갱신한다.
-    ref.listen(scheduleStreamProvider, (previous, next) {
-      next.whenData((list) {
-        ref.read(geofenceManagerProvider).syncSchedules(list);
-      });
+
+    // 일정 목록 스트림도 같은 방식으로 수동 구독하여 지오펜스를 항상 최신 상태로 맞춘다.
+    final scheduleSubscription = ref.listenManual(
+      scheduleStreamProvider,
+      (previous, next) {
+        next.whenData((list) {
+          ref.read(geofenceManagerProvider).syncSchedules(list);
+        });
+      },
+    );
+    // 일정 스트림 구독 또한 위젯 수명과 함께 정리한다.
+    ref.onDispose(() {
+      scheduleSubscription.close();
     });
   }
 
