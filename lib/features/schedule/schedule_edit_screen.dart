@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
-import 'package:latlong2/latlong.dart';
 
 import '../../data/schedule_models.dart';
 import '../../data/schedule_repository.dart';
 import '../../services/geofence_manager.dart';
+import 'widgets/map_preview.dart';
 import 'providers.dart';
 
 /// 일정 등록/수정 화면
@@ -396,71 +395,5 @@ class _ScheduleEditScreenState extends ConsumerState<ScheduleEditScreen> {
     } else {
       context.go('/');
     }
-  }
-}
-
-/// 간단한 지도 프리뷰(FlutterMap 기반)
-class MapPreview extends StatelessWidget {
-  const MapPreview({super.key, required this.lat, required this.lng, required this.radius});
-
-  final double? lat;
-  final double? lng;
-  final double radius;
-
-  @override
-  Widget build(BuildContext context) {
-    if (lat == null || lng == null) {
-      return Container(
-        height: 200,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: Colors.grey.shade200,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: const Text('좌표가 설정되면 지도가 표시됩니다.'),
-      );
-    }
-    final position = LatLng(lat!, lng!);
-    return SizedBox(
-      height: 220,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: FlutterMap(
-          options: MapOptions(
-            initialCenter: position,
-            initialZoom: 16,
-            interactionOptions: const InteractionOptions(
-              flags: InteractiveFlag.pinchZoom | InteractiveFlag.drag,
-            ),
-          ),
-          children: [
-            TileLayer(
-              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-              userAgentPackageName: 'com.example.energy_battery',
-            ),
-            CircleLayer(
-              circles: [
-                CircleMarker(
-                  point: position,
-                  color: Colors.blue.withOpacity(0.2),
-                  borderStrokeWidth: 2,
-                  borderColor: Colors.blue,
-                  useRadiusInMeter: true,
-                  radius: radius,
-                ),
-              ],
-            ),
-            MarkerLayer(
-              markers: [
-                Marker(
-                  point: position,
-                  child: const Icon(Icons.location_on, color: Colors.red, size: 36),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }
