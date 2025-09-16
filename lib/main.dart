@@ -8,6 +8,7 @@ import 'data/schedule_repository.dart';
 import 'features/schedule/providers.dart';
 import 'features/schedule/schedule_detail_screen.dart';
 import 'features/schedule/schedule_edit_screen.dart';
+import 'features/home/life_battery_home_screen.dart';
 import 'features/schedule/schedule_home_screen.dart';
 import 'features/settings/settings_screen.dart';
 import 'services/geofence_manager.dart';
@@ -57,7 +58,21 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/',
         name: 'home',
-        builder: (context, state) => const ScheduleHomeScreen(),
+        builder: (context, state) {
+          // ▼ 초보자도 이해하기 쉽게: 앱을 켰을 때 가장 먼저 보이는 화면을 지정한다.
+          //    기존에는 일정 홈(ScheduleHomeScreen)으로 이동했지만,
+          //    요청에 따라 라이프 배터리 홈(LifeBatteryHomeScreen)을 기본 화면으로 교체했다.
+          return const LifeBatteryHomeScreen();
+        },
+      ),
+      GoRoute(
+        path: '/schedule',
+        name: 'scheduleHome',
+        builder: (context, state) {
+          // ▼ 라이프 배터리 홈에서 일정 전용 화면으로 이동하고 싶을 때 사용할 라우트.
+          //    '/schedule' 경로로 이동하면 이전에 사용하던 일정 홈 UI를 그대로 확인할 수 있다.
+          return const ScheduleHomeScreen();
+        },
       ),
       GoRoute(
         path: '/schedule/new',
