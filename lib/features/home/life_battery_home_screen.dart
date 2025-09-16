@@ -434,17 +434,35 @@ class _LifeBatteryHomeScreenState
                           final base = e.endAt.difference(e.startAt);
                           final remain = running ? _remain : _remainMap[e.id] ?? base;
                           final rate = _rateFor(e, repo);
+                          final isProtected =
+                              repo.isProtectedEvent(e.id); // 기본 일정 여부 확인
 
                           return Dismissible(
                             key: ValueKey(e.id),
-                            direction: DismissDirection.endToStart,
+                            // 기본 일정은 삭제 스와이프를 막기 위해 방향을 none으로 설정한다.
+                            direction: isProtected
+                                ? DismissDirection.none
+                                : DismissDirection.endToStart,
                             background: Container(
                               alignment: Alignment.centerRight,
                               padding: const EdgeInsets.only(right: 20),
                               color: Colors.red,
                               child: const Icon(Icons.delete, color: Colors.white),
                             ),
+                            // 삭제 시도 전 확인 로직: 기본 일정이면 스낵바로 안내하고 취소한다.
+                            confirmDismiss: (_) async {
+                              if (isProtected) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('기본 일정은 삭제할 수 없습니다.'),
+                                  ),
+                                );
+                                return false;
+                              }
+                              return true;
+                            },
                             onDismissed: (_) async {
+                              if (isProtected) return; // 안전망: 혹시 모를 호출을 한 번 더 차단
                               if (running) await _stopEvent();
                               try {
                                 await ref.read(notificationProvider).cancel(e.id.hashCode);

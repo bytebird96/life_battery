@@ -13,11 +13,24 @@ final repositoryProvider = Provider<AppRepository>((ref) => throw UnimplementedE
 
 /// 간단한 리포지토리 구현
 class AppRepository {
+  // 기본 제공 일정의 ID를 상수로 관리하여 어디서든 동일한 값을 사용할 수 있게 한다.
+  static const String commuteEventId = 'default-commute';
+  static const String sleepEventId = 'default-sleep';
+
+  // 삭제가 금지된 일정 ID를 모아 둔 집합. 새로운 기본 일정이 생기면 여기에만 추가하면 된다.
+  static const Set<String> _protectedEventIds = {
+    commuteEventId,
+    sleepEventId,
+  };
+
   late final db.AppDb _db; // 실제 DB 접근 객체
   UserSettings settings = UserSettings();
   List<Event> events = [];
   Map<String, String> eventIcons = {}; // 이벤트 ID별 아이콘 이름을 따로 저장
   Map<String, String> eventColors = {}; // 이벤트 ID별 색상 이름을 따로 저장
+
+  // 특정 ID가 기본 제공 일정인지 확인하는 헬퍼. UI나 삭제 로직에서 재사용된다.
+  bool isProtectedEvent(String id) => _protectedEventIds.contains(id);
 
   Future<void> init() async {
     _db = db.AppDb(); // 로컬 데이터베이스 초기화
@@ -81,15 +94,8 @@ class AppRepository {
     // 시작 시각 기준으로 일정들을 정렬하여 화면에 일정이 섞여 보이지 않도록 한다.
     events.sort((a, b) => a.startAt.compareTo(b.startAt));
 
-    // 저장된 이벤트가 하나도 없다면 더미 데이터를 추가하고 DB에도 저장한다.
-    if (events.isEmpty) {
-      await addDummy(DateTime.now());
-      // addDummy에서 생성한 리스트를 복사해 DB에 저장
-      final dummy = List<Event>.from(events);
-      for (final e in dummy) {
-        await saveEvent(e); // DB에 저장
-      }
-    }
+    // 기본 제공 일정(출근/수면)이 없으면 자동으로 생성하여 초기 데이터가 항상 유지되도록 한다.
+    await _ensureInitialEvents(DateTime.now());
   }
 
   /// 오늘 윈도우 이벤트 조회
@@ -137,6 +143,10 @@ class AppRepository {
 
   /// 이벤트 삭제
   Future<void> deleteEvent(String id) async {
+    // 기본 제공 일정은 삭제 요청이 들어와도 무시하여 사용자가 실수로 지우지 못하게 한다.
+    if (isProtectedEvent(id)) {
+      return;
+    }
     // 1. 메모리 상의 일정 목록에서 해당 ID 삭제
     events.removeWhere((e) => e.id == id);
     eventIcons.remove(id); // 아이콘 정보도 함께 제거
@@ -169,49 +179,59 @@ class AppRepository {
     return simulate(es, settings, start, end);
   }
 
-  /// 더미 데이터 추가
-  Future<void> addDummy(DateTime day) async {
-    // 예시 데이터 3개 생성
-    events = [
+  // 출근/수면 기본 일정을 DB와 메모리에 보장하는 헬퍼. 여러 번 호출되어도 중복 저장되지 않는다.
+  Future<void> _ensureInitialEvents(DateTime day) async {
+    final initialEvents = _buildInitialEvents(day); // 기준 날짜를 바탕으로 기본 일정 생성
+
+    for (final event in initialEvents) {
+      final exists = events.any((e) => e.id == event.id); // 이미 저장되어 있는지 확인
+      if (!exists) {
+        await saveEvent(event); // 없으면 새로 저장하여 DB와 메모리에 반영
+      }
+    }
+  }
+
+  // 기준 날짜를 이용해 "출근"과 "수면" 일정 두 개를 만들어 반환한다.
+  List<Event> _buildInitialEvents(DateTime day) {
+    final now = DateTime.now(); // 생성/수정 시각은 호출 시점 기준으로 기록한다.
+
+    // 출근 일정은 오전 9시부터 오후 6시까지로 기본 설정한다.
+    final commuteStart = DateTime(day.year, day.month, day.day, 9, 0);
+    final commuteEnd = DateTime(day.year, day.month, day.day, 18, 0);
+
+    // 수면 일정은 밤 11시부터 다음 날 아침 7시까지로 기본 설정한다.
+    final sleepStart = DateTime(day.year, day.month, day.day, 23, 0);
+    final sleepEnd = sleepStart.add(const Duration(hours: 8));
+
+    return [
       Event(
-          id: '1',
-          title: '작업',
-          content: '프로젝트 진행',
-          startAt: DateTime(day.year, day.month, day.day, 9, 0),
-          endAt: DateTime(day.year, day.month, day.day, 15, 0),
-          type: EventType.work,
-          ratePerHour: -6,
-          priority: defaultPriority(EventType.work),
-          createdAt: day,
-          updatedAt: day,
-          iconName: 'work',
-          colorName: 'purple'),
+        id: commuteEventId,
+        title: '출근',
+        content: '아침 출근 시간',
+        startAt: commuteStart,
+        endAt: commuteEnd,
+        type: EventType.work,
+        ratePerHour: null,
+        priority: defaultPriority(EventType.work),
+        createdAt: now,
+        updatedAt: now,
+        iconName: 'work',
+        colorName: 'purple',
+      ),
       Event(
-          id: '2',
-          title: '휴식',
-          content: '가벼운 산책',
-          startAt: DateTime(day.year, day.month, day.day, 15, 0),
-          endAt: DateTime(day.year, day.month, day.day, 15, 30),
-          type: EventType.rest,
-          ratePerHour: null,
-          priority: defaultPriority(EventType.rest),
-          createdAt: day,
-          updatedAt: day,
-          iconName: 'rest',
-          colorName: 'green'),
-      Event(
-          id: '3',
-          title: '수면',
-          content: '밤사이 휴식',
-          startAt: DateTime(day.year, day.month, day.day, 23, 30),
-          endAt: DateTime(day.year, day.month, day.day + 1, 7, 30),
-          type: EventType.sleep,
-          ratePerHour: null,
-          priority: defaultPriority(EventType.sleep),
-          createdAt: day,
-          updatedAt: day,
-          iconName: 'sleep',
-          colorName: 'blue'),
+        id: sleepEventId,
+        title: '수면',
+        content: '숙면 시간',
+        startAt: sleepStart,
+        endAt: sleepEnd,
+        type: EventType.sleep,
+        ratePerHour: null,
+        priority: defaultPriority(EventType.sleep),
+        createdAt: now,
+        updatedAt: now,
+        iconName: 'sleep',
+        colorName: 'blue',
+      ),
     ];
   }
 }
