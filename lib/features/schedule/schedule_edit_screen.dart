@@ -89,7 +89,15 @@ class _ScheduleEditScreenState extends ConsumerState<ScheduleEditScreen> {
         : ref.watch(scheduleByIdProvider(widget.scheduleId!));
     final titleText = widget.scheduleId == null ? '일정 등록' : '일정 수정';
     return Scaffold(
-      appBar: AppBar(title: Text(titleText)),
+      appBar: AppBar(
+        title: Text(titleText),
+        // 직접 만든 뒤로가기 버튼으로 초보자도 쉽게 이전 화면으로 돌아갈 수 있도록 한다.
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          tooltip: '뒤로가기',
+          onPressed: () => context.pop(),
+        ),
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [

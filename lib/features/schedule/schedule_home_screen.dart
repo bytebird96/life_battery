@@ -72,13 +72,15 @@ class _ScheduleHomeScreenState extends ConsumerState<ScheduleHomeScreen> {
         actions: [
           IconButton(
             tooltip: '설정',
-            onPressed: () => context.go('/settings'),
+            // push를 사용하면 내비게이션 스택에 화면이 쌓여 AppBar가 자동으로 뒤로가기를 표시한다.
+            onPressed: () => context.push('/settings'),
             icon: const Icon(Icons.settings),
           ),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.go('/schedule/new'),
+        // 새 일정 작성 화면 역시 push로 이동하여 뒤로가기가 가능하도록 한다.
+        onPressed: () => context.push('/schedule/new'),
         icon: const Icon(Icons.add_location_alt),
         label: const Text('일정 추가'),
       ),
@@ -118,6 +120,22 @@ class _ScheduleHomeScreenState extends ConsumerState<ScheduleHomeScreen> {
         .where((s) => s.startAt.isAfter(now) && !_isSameDay(s.startAt, now))
         .toList(growable: false);
 
+    if (schedules.isEmpty) {
+      // 등록된 일정이 전혀 없을 때는 안내 문구와 바로가기 버튼을 함께 보여준다.
+      return RefreshIndicator(
+        onRefresh: () async {
+          await _syncGeofences();
+        },
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(32),
+          children: [
+            _buildEmptyPlaceholder(),
+          ],
+        ),
+      );
+    }
+
     return RefreshIndicator(
       onRefresh: () async {
         await _syncGeofences();
@@ -127,7 +145,7 @@ class _ScheduleHomeScreenState extends ConsumerState<ScheduleHomeScreen> {
         children: [
           if (todayList.isEmpty)
             _sectionTitle('오늘 일정이 없습니다'),
-         if (todayList.isNotEmpty) ...[
+          if (todayList.isNotEmpty) ...[
             _sectionTitle('오늘 일정'),
             ...todayList.map(_buildTile),
           ],
@@ -141,6 +159,33 @@ class _ScheduleHomeScreenState extends ConsumerState<ScheduleHomeScreen> {
           ...upcomingList.map(_buildTile),
         ],
       ),
+    );
+  }
+
+  /// 일정이 하나도 없을 때 보여줄 친절한 안내 위젯
+  Widget _buildEmptyPlaceholder() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(Icons.calendar_today, size: 72, color: Colors.blueGrey),
+        const SizedBox(height: 16),
+        const Text(
+          '아직 등록된 위치 기반 일정이 없습니다.',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          '아래 버튼을 눌러 첫 일정을 만들어보세요.\n(예: 집 근처 도착 시 알림)',
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 20),
+        FilledButton.icon(
+          onPressed: () => context.push('/schedule/new'),
+          icon: const Icon(Icons.add_location_alt_outlined),
+          label: const Text('첫 일정 만들기'),
+        ),
+      ],
     );
   }
 
@@ -176,7 +221,8 @@ class _ScheduleHomeScreenState extends ConsumerState<ScheduleHomeScreen> {
           ],
         ),
         trailing: statusIcon,
-       onTap: () => context.go('/schedule/${schedule.id}'),
+        // 상세 화면 이동도 push로 변경해 AppBar에 뒤로가기가 나타나도록 한다.
+        onTap: () => context.push('/schedule/${schedule.id}'),
       ),
     );
   }

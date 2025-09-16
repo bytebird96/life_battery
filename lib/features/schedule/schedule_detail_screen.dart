@@ -27,9 +27,16 @@ class ScheduleDetailScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: Text(schedule.title),
+        // 직접 뒤로가기 버튼을 배치해 어떤 경로로 들어왔더라도 안전하게 이전 화면으로 돌아가도록 한다.
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          tooltip: '뒤로가기',
+          onPressed: () => context.pop(),
+        ),
         actions: [
           IconButton(
-            onPressed: () => context.go('/schedule/${schedule.id}/edit'),
+            // 수정 화면 역시 push를 사용하여 뒤로가기가 자연스럽게 노출되도록 한다.
+            onPressed: () => context.push('/schedule/${schedule.id}/edit'),
             icon: const Icon(Icons.edit),
             tooltip: '수정',
           ),
