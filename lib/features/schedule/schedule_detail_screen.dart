@@ -29,7 +29,8 @@ class ScheduleDetailScreen extends ConsumerWidget {
         title: Text(schedule.title),
         actions: [
           IconButton(
-            onPressed: () => context.go('/schedule/${schedule.id}/edit'),
+            // 상세 화면에서 편집 화면으로 이동할 때는 push를 사용해 되돌아올 수 있도록 한다.
+            onPressed: () => context.push('/schedule/${schedule.id}/edit'),
             icon: const Icon(Icons.edit),
             tooltip: '수정',
           ),
