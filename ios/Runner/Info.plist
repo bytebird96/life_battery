@@ -41,9 +41,33 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<false/>
-	<key>CFBundlePackageType</key>
-	<string>APPL</string>
+        <key>ITSAppUsesNonExemptEncryption</key>
+        <false/>
+        <key>CFBundlePackageType</key>
+        <string>APPL</string>
+        <key>NSLocationWhenInUseUsageDescription</key>
+        <string>정확한 위치를 사용해 지정된 장소 도착/이탈 알림을 제공합니다.</string>
+        <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+        <string>백그라운드에서도 위치 기반 알림을 제공하기 위해 항상 위치 접근이 필요합니다.</string>
+        <key>NSLocationAlwaysUsageDescription</key>
+        <string>백그라운드에서도 위치 기반 알림을 제공하기 위해 항상 위치 접근이 필요합니다.</string>
+        <key>NSLocationTemporaryUsageDescriptionDictionary</key>
+        <dict>
+                <key>Purpose</key>
+                <string>지오펜스 기능을 위해 일시적으로 정밀 위치를 사용합니다.</string>
+        </dict>
+        <key>UIBackgroundModes</key>
+        <array>
+                <string>location</string>
+        </array>
+        <key>CFBundleURLTypes</key>
+        <array>
+                <dict>
+                        <key>CFBundleURLSchemes</key>
+                        <array>
+                                <string>myapp</string>
+                        </array>
+                </dict>
+        </array>
 </dict>
 </plist>

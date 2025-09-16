@@ -1,12 +1,28 @@
+import 'dart:async';
+
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:timezone/data/latest.dart' as tz; // 타임존 데이터 로드
 import 'package:timezone/timezone.dart' as tz; // 일정 시간 계산에 사용
 
+@pragma('vm:entry-point')
+void notificationTapBackground(NotificationResponse response) {
+  NotificationService._onBackgroundNotificationResponse(response);
+}
+
 /// 로컬 알림을 처리하는 서비스
 class NotificationService {
+  NotificationService() {
+    _instance = this;
+  }
+
   /// 플러그인 인스턴스. 각 플랫폼에서 공통으로 사용한다.
   final _plugin = FlutterLocalNotificationsPlugin();
+  final _payloadController = StreamController<String>.broadcast();
+
+  static NotificationService? _instance;
+
+  Stream<String> get payloadStream => _payloadController.stream;
 
   /// 초기화 메서드
   ///
@@ -32,7 +48,11 @@ class NotificationService {
     // 타임존 정보를 초기화하여 정확한 예약 알림 시간을 계산
     tz.initializeTimeZones();
     // 플러그인 실제 초기화 수행
-    await _plugin.initialize(init);
+    await _plugin.initialize(
+      init,
+      onDidReceiveNotificationResponse: _handleNotificationResponse,
+      onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
+    );
 
     // 안드로이드 13(API 33) 이상에서는 알림 권한이 기본적으로 꺼져 있으므로
     // 명시적으로 사용자에게 권한 허용을 요청한다
@@ -48,6 +68,18 @@ class NotificationService {
         .resolvePlatformSpecificImplementation<
             IOSFlutterLocalNotificationsPlugin>()
         ?.requestPermissions(alert: true, sound: true, badge: true);
+  }
+
+  void _handleNotificationResponse(NotificationResponse response) {
+    final payload = response.payload;
+    if (payload != null && payload.isNotEmpty) {
+      _payloadController.add(payload);
+    }
+  }
+
+  static void _onBackgroundNotificationResponse(
+      NotificationResponse response) {
+    _instance?._handleNotificationResponse(response);
   }
 
   /// 배터리가 부족할 때 보여주는 간단한 알림
@@ -99,6 +131,29 @@ class NotificationService {
   /// 예약된 알림 취소
   Future<void> cancel(int id) async {
     await _plugin.cancel(id);
+  }
+
+  /// 지오펜스 트리거로 즉시 노출하는 알림
+  Future<void> showScheduleReminder({
+    required String scheduleId,
+    required String title,
+    required String body,
+  }) async {
+    const android = AndroidNotificationDetails(
+      'geofence',
+      '위치 알림',
+      importance: Importance.max,
+      priority: Priority.high,
+    );
+    const darwin = DarwinNotificationDetails();
+    const details = NotificationDetails(android: android, iOS: darwin, macOS: darwin);
+    await _plugin.show(
+      scheduleId.hashCode,
+      title,
+      body,
+      details,
+      payload: scheduleId,
+    );
   }
 }
 
