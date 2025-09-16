@@ -7,13 +7,47 @@ import '../data/schedule_models.dart';
 import '../data/schedule_repository.dart';
 import 'notifications.dart';
 
+/// 지오펜스 트리거가 발생했을 때, 해당 일정과 매핑되는 이벤트 ID를 찾아주는 콜백 타입
+///
+/// 외부(UI)에서 AppRepository 등 다른 의존성을 활용해야 하므로, 직접 참조 대신
+/// 콜백을 받아서 필요할 때마다 호출하도록 설계한다.
+typedef ScheduleEventIdResolver = String? Function(Schedule schedule);
+
+/// 지오펜스가 실제로 발동했을 때 UI로 전달할 페이로드 모델
+class GeofenceTriggeredEvent {
+  GeofenceTriggeredEvent({
+    required this.schedule,
+    required this.eventId,
+    required this.status,
+    required this.location,
+    required this.triggeredAt,
+  });
+
+  /// 어떤 일정(Schedule)이 트리거됐는지 그대로 전달한다.
+  final Schedule schedule;
+
+  /// UI에서 자동으로 실행해야 할 Event의 ID(AppRepository.commuteEventId 등)
+  final String eventId;
+
+  /// 실제로 들어오거나 나간 상태(ENTER/EXIT)를 함께 남겨 디버깅에 도움을 준다.
+  final GeofenceStatus status;
+
+  /// 트리거 시점의 마지막 위치 정보(정확도 확인 등 디버깅용)
+  final Location location;
+
+  /// 트리거가 감지된 시각. 로그를 남길 때 유용하다.
+  final DateTime triggeredAt;
+}
+
 /// 지오펜스 등록/해제/이벤트 처리를 담당하는 매니저
 class GeofenceManager {
   GeofenceManager({
     required ScheduleRepository repository,
     required NotificationService notificationService,
+    ScheduleEventIdResolver? eventIdResolver,
   })  : _repository = repository,
-        _notificationService = notificationService {
+        _notificationService = notificationService,
+        _eventIdResolver = eventIdResolver {
     // geofence_service 패키지에서 제공하는 서비스 인스턴스를 설정한다.
     _service = GeofenceService.instance.setup(
       // interval: 5000,
@@ -54,6 +88,21 @@ class GeofenceManager {
   final NotificationService _notificationService;
   final Set<String> _registeredIds = <String>{};
   bool _running = false;
+  ScheduleEventIdResolver? _eventIdResolver;
+
+  /// 지오펜스가 발동했을 때 UI로 통보하기 위한 스트림 컨트롤러
+  /// broadcast 모드로 만들어 여러 화면이 동시에 구독해도 안전하게 동작한다.
+  final StreamController<GeofenceTriggeredEvent> _triggerController =
+      StreamController<GeofenceTriggeredEvent>.broadcast();
+
+  /// 외부에서 트리거 스트림을 구독할 때 사용할 getter
+  Stream<GeofenceTriggeredEvent> get triggerStream =>
+      _triggerController.stream;
+
+  /// AppRepository 등 외부 의존성에서 이벤트 ID 매퍼를 주입할 때 사용할 setter
+  set eventIdResolver(ScheduleEventIdResolver? resolver) {
+    _eventIdResolver = resolver;
+  }
 
   Future<void> init() async {
     try {
@@ -136,6 +185,7 @@ class GeofenceManager {
     await _service.stop();
     _registeredIds.clear();
     _running = false;
+    await _triggerController.close();
   }
 
   // void _onStatusChanged(
@@ -250,6 +300,37 @@ class GeofenceManager {
       body: schedule.presetMessage,
     );
     await _repository.addLog('알림 발송: ${schedule.title}', scheduleId: schedule.id);
+
+    // 일정과 연결된 이벤트 ID를 찾아 UI로 전달한다.
+    final mappedEventId = _eventIdResolver?.call(schedule);
+    if (mappedEventId == null) {
+      // 어떤 이벤트와 연결해야 할지 몰라 자동 실행을 생략했음을 로그로 남긴다.
+      await _repository.addLog(
+        '자동 실행할 이벤트 ID를 찾지 못했습니다: ${schedule.title}',
+        scheduleId: schedule.id,
+      );
+      debugPrint('지오펜스 자동 실행 매핑 실패: ${schedule.id}/${schedule.presetType}');
+      return;
+    }
+
+    final payload = GeofenceTriggeredEvent(
+      schedule: schedule,
+      eventId: mappedEventId,
+      status: status,
+      location: location,
+      triggeredAt: DateTime.now(),
+    );
+
+    // 스트림 구독자들에게 트리거 결과를 통보한다.
+    try {
+      _triggerController.add(payload);
+      await _repository.addLog(
+        '지오펜스 감지로 자동 실행 요청: ${schedule.title} → $mappedEventId',
+        scheduleId: schedule.id,
+      );
+    } catch (e, stack) {
+      debugPrint('지오펜스 스트림 통지 실패: $e\n$stack');
+    }
   }
 
   // bool _shouldTrigger(Schedule schedule, GeofenceEvent event) {
@@ -293,3 +374,10 @@ class GeofenceManager {
 /// 지오펜스 매니저 주입용 프로바이더
 final geofenceManagerProvider =
 Provider<GeofenceManager>((ref) => throw UnimplementedError());
+
+/// 지오펜스 자동 실행 스트림을 외부에서 쉽게 구독할 수 있도록 노출하는 프로바이더
+final geofenceTriggerStreamProvider =
+    StreamProvider<GeofenceTriggeredEvent>((ref) {
+  final manager = ref.watch(geofenceManagerProvider);
+  return manager.triggerStream;
+});

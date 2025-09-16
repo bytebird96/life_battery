@@ -37,6 +37,19 @@ void main() async {
     repository: scheduleRepo,
     notificationService: notif,
   );
+  // Schedule.presetType에 따라 어떤 Event를 자동 실행해야 하는지 매핑한다.
+  geofenceManager.eventIdResolver = (schedule) {
+    switch (schedule.presetType) {
+      case SchedulePresetType.commuteIn:
+      case SchedulePresetType.commuteOut:
+        // 기본 제공 출근 이벤트와 연결한다. (퇴근도 동일 이벤트를 재사용)
+        return AppRepository.commuteEventId;
+      case SchedulePresetType.move:
+      case SchedulePresetType.workout:
+        // 아직은 대응되는 기본 Event가 없으므로 null을 반환해 자동 실행을 생략한다.
+        return null;
+    }
+  };
 
   runApp(
     ProviderScope(

@@ -45,6 +45,9 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
   // ======================== 신규: 권한/지오펜스 준비 상태 ========================
   bool _requesting = false; // 권한 요청이 중복 실행되는 것을 막기 위한 플래그
 
+  /// 지오펜스 매니저가 전달하는 자동 실행 이벤트를 수신하기 위한 구독자
+  ProviderSubscription<AsyncValue<GeofenceTriggeredEvent>>? _geofenceSub;
+
   // ------------------------------ 생명주기 ------------------------------
   @override
   void initState() {
@@ -59,6 +62,23 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
     // 2) SharedPreferences에 저장된 진행 중인 작업 정보를 비동기로 불러온다.
     Future.microtask(_loadState);
 
+    // 2-1) 지오펜스에서 자동 실행 요청이 들어오면 처리하도록 스트림을 구독한다.
+    _geofenceSub = ref.listenManual<AsyncValue<GeofenceTriggeredEvent>>(
+      geofenceTriggerStreamProvider,
+      (prev, next) {
+        next.whenData((payload) {
+          if (!mounted) return;
+          // 비동기 처리를 기다릴 필요가 없으므로 unawaited 사용
+          unawaited(_handleAutoStartFromGeofence(payload));
+        });
+      },
+    );
+    // 이미 대기 중인 값이 있다면 즉시 처리하여 놓치지 않도록 한다.
+    ref.read(geofenceTriggerStreamProvider).whenData((payload) {
+      if (!mounted) return;
+      unawaited(_handleAutoStartFromGeofence(payload));
+    });
+
     // 3) 첫 프레임이 그려진 직후 위치 권한을 요청하고 지오펜스를 동기화한다.
     //    (빌드 전에 실행하면 로딩이 길어져 UI가 멈춘 것처럼 느껴질 수 있다.)
     WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -70,6 +90,7 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
   void dispose() {
     // 화면이 사라질 때 타이머를 반드시 정리하여 메모리 누수를 막는다.
     _countdown?.cancel();
+    _geofenceSub?.close();
     super.dispose();
   }
 
@@ -277,6 +298,73 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
 
     await _saveRemainMap();
     await _clearRunningTask();
+  }
+
+  /// 지오펜스 매니저가 자동 실행을 요청했을 때 실제 이벤트를 시작하는 헬퍼
+  Future<void> _handleAutoStartFromGeofence(
+      GeofenceTriggeredEvent payload) async {
+    if (!mounted) return; // 위젯이 이미 파괴되었다면 더 진행하지 않는다.
+
+    final scheduleRepo = ref.read(scheduleRepositoryProvider);
+    final repo = ref.read(repositoryProvider);
+
+    // 전달받은 이벤트 ID와 일치하는 Event를 찾아온다.
+    Event? target;
+    try {
+      target = repo.events.firstWhere((e) => e.id == payload.eventId);
+    } catch (_) {
+      target = null;
+    }
+
+    if (target == null) {
+      // 이벤트가 삭제되었거나 매핑이 잘못된 경우 사용자 로그로 남긴다.
+      await scheduleRepo.addLog(
+        '자동 실행 대상 이벤트(${payload.eventId})를 찾지 못했습니다.',
+        scheduleId: payload.schedule.id,
+      );
+      debugPrint('자동 실행할 이벤트 없음: ${payload.eventId}');
+      return;
+    }
+
+    if (_runningId == target.id) {
+      // 동일 이벤트가 이미 실행 중이면 중복 실행을 방지한다.
+      await scheduleRepo.addLog(
+        '이미 실행 중인 이벤트라 자동 실행을 건너뜁니다: ${target.title}',
+        scheduleId: payload.schedule.id,
+      );
+      return;
+    }
+
+    if (_runningId != null && _runningId != target.id) {
+      // 다른 이벤트가 진행 중이면 충돌을 피하기 위해 자동 실행을 취소한다.
+      await scheduleRepo.addLog(
+        '다른 이벤트($_runningId)가 진행 중이라 자동 실행을 생략했습니다.',
+        scheduleId: payload.schedule.id,
+      );
+      debugPrint('자동 실행이 충돌로 인해 취소됨: 현재 $_runningId, 요청 ${target.id}');
+      return;
+    }
+
+    final baseDuration = target.endAt.difference(target.startAt);
+    final remain = _remainMap[target.id] ?? baseDuration;
+    if (remain <= Duration.zero) {
+      await scheduleRepo.addLog(
+        '남은 시간이 없어 자동 실행을 건너뜁니다: ${target.title}',
+        scheduleId: payload.schedule.id,
+      );
+      return;
+    }
+
+    await _startEvent(target);
+
+    // 자동 실행이 성공했음을 로그로 남기고, 해당 위치 일정은 완료 상태로 표시한다.
+    await scheduleRepo.setExecuted(payload.schedule.id, true);
+    await scheduleRepo.addLog(
+      '지오펜스 자동 실행 완료: ${payload.schedule.title} → ${target.title}',
+      scheduleId: payload.schedule.id,
+    );
+    debugPrint(
+        '지오펜스 자동 실행 성공: ${payload.schedule.id} → ${target.id} (${payload.status.name})');
   }
 
   /// 남은 시간을 모두 적용하여 즉시 일정을 완료하는 함수
