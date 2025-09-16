@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'core/compute.dart';
+import 'data/models.dart';
 import 'data/repositories.dart';
 import 'data/schedule_db.dart';
 import 'data/schedule_repository.dart';
+import 'features/event/edit_event_screen.dart';
 import 'features/schedule/providers.dart';
 import 'features/schedule/schedule_detail_screen.dart';
-import 'features/schedule/schedule_edit_screen.dart';
 import 'features/home/life_battery_home_screen.dart';
 import 'features/schedule/schedule_home_screen.dart';
 import 'features/settings/settings_screen.dart';
@@ -111,7 +113,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/schedule/new',
         name: 'scheduleNew',
-        builder: (context, state) => const ScheduleEditScreen(),
+        builder: (context, state) {
+          // ▼ 위치 기반 옵션이 포함된 새 일정 작성 화면을 `EditEventScreen`으로 통합했다.
+          //    이벤트와 지오펜스 정보를 한 번에 입력할 수 있도록 바로 해당 화면을 연다.
+          return const EditEventScreen();
+        },
       ),
       GoRoute(
         path: '/schedule/:id',
@@ -126,7 +132,71 @@ final routerProvider = Provider<GoRouter>((ref) {
         name: 'scheduleEdit',
         builder: (context, state) {
           final id = state.pathParameters['id']!;
-          return ScheduleEditScreen(scheduleId: id);
+          // ▼ 기존 일정 수정 시에도 동일한 편집 화면을 사용한다.
+          //    Consumer를 이용해 Riverpod 상태를 구독하고, 저장된 이벤트/일정 정보를 불러온다.
+          return Consumer(
+            builder: (context, ref, _) {
+              final repo = ref.watch(repositoryProvider);
+              final asyncSchedules = ref.watch(scheduleStreamProvider);
+
+              // 1) 우선 이벤트 목록에서 동일 ID를 찾는다. (이전 통합 저장 구조와 호환)
+              final existingEvent = repo.findEventById(id);
+              if (existingEvent != null) {
+                return EditEventScreen(event: existingEvent);
+              }
+
+              // 2) 이벤트가 없을 경우, 기존 위치 기반 일정만 존재할 수 있으므로 스트림에서 찾아본다.
+              return asyncSchedules.when(
+                data: (items) {
+                  Schedule? schedule;
+                  for (final item in items) {
+                    if (item.id == id) {
+                      schedule = item;
+                      break;
+                    }
+                  }
+
+                  if (schedule != null) {
+                    // ▼ 일정 정보만 있을 때도 사용자가 당황하지 않도록, 임시 Event 데이터를 만들어 전달한다.
+                    final fallbackEvent = Event(
+                      id: schedule.id,
+                      title: schedule.title,
+                      content: schedule.placeName, // 장소명을 메모 용도로 채워준다.
+                      startAt: schedule.startAt,
+                      endAt: schedule.endAt,
+                      type: EventType.neutral,
+                      ratePerHour: 0,
+                      priority: defaultPriority(EventType.neutral),
+                      createdAt: schedule.createdAt,
+                      updatedAt: schedule.updatedAt,
+                      iconName:
+                          repo.eventIcons[schedule.id] ?? defaultEventIconName,
+                      colorName:
+                          repo.eventColors[schedule.id] ?? defaultEventColorName,
+                    );
+                    return EditEventScreen(event: fallbackEvent);
+                  }
+
+                  // 3) 어떤 정보도 없으면 안내 문구를 보여준다.
+                  return const Scaffold(
+                    body: Center(
+                      child: Text('해당 일정을 불러오지 못했습니다. 홈으로 돌아가 다시 시도해주세요.'),
+                    ),
+                  );
+                },
+                loading: () => const Scaffold(
+                  body: Center(
+                    child: CircularProgressIndicator(),
+                  ),
+                ),
+                error: (error, stack) => Scaffold(
+                  body: Center(
+                    child: Text('일정을 불러오는 중 오류가 발생했습니다: $error'),
+                  ),
+                ),
+              );
+            },
+          );
         },
       ),
       GoRoute(
