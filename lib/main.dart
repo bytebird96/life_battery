@@ -11,6 +11,8 @@ import 'features/schedule/schedule_edit_screen.dart';
 import 'features/home/life_battery_home_screen.dart';
 import 'features/schedule/schedule_home_screen.dart';
 import 'features/settings/settings_screen.dart';
+import 'features/task/task_screen.dart';
+import 'features/home/event_list_screen.dart';
 import 'services/geofence_manager.dart';
 import 'services/holiday_service.dart';
 import 'services/notifications.dart';
@@ -76,6 +78,25 @@ final routerProvider = Provider<GoRouter>((ref) {
           //    기존에는 일정 홈(ScheduleHomeScreen)으로 이동했지만,
           //    요청에 따라 라이프 배터리 홈(LifeBatteryHomeScreen)을 기본 화면으로 교체했다.
           return const LifeBatteryHomeScreen();
+        },
+      ),
+      GoRoute(
+        path: '/tasks',
+        name: 'tasks',
+        builder: (context, state) {
+          // ▼ 하단 탭의 시계 아이콘을 눌렀을 때 보여줄 작업 화면을 연결한다.
+          //    기존 Navigator.pushNamed('/tasks') 호출과 동일한 목적이지만,
+          //    GoRouter를 사용해 라우팅을 일관되게 관리한다.
+          return const TaskScreen();
+        },
+      ),
+      GoRoute(
+        path: '/events',
+        name: 'events',
+        builder: (context, state) {
+          // ▼ 홈 화면의 "See All" 텍스트를 누르면 전체 일정 목록을 확인하도록 연결한다.
+          //    추후 다른 화면에서도 같은 경로를 재사용할 수 있도록 라우트로 등록한다.
+          return const EventListScreen();
         },
       ),
       GoRoute(

@@ -602,8 +602,10 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
                     context.push('/schedule/new');
                   },
                   onClock: () async {
-                    // 작업/기록 화면 등 기존 네비게이션은 유지
-                    await Navigator.pushNamed(context, '/tasks');
+                    // 작업/기록 화면 등 기존 네비게이션은 유지하면서도
+                    // Navigator 대신 GoRouter의 context.push를 사용해
+                    // '/tasks' 라우트를 부른다. (뒤로가기도 동일하게 동작)
+                    await context.push('/tasks');
                     if (mounted) setState(() {});
                   },
                 ),
@@ -641,7 +643,8 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
               ),
             ),
             GestureDetector(
-              onTap: () => Navigator.pushNamed(context, '/events'),
+              onTap: () =>
+                  context.push('/events'), // GoRouter 경로로 전체 일정 화면 이동
               child: Text(
                 'See All',
                 style: TextStyle(
