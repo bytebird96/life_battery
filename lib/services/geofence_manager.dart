@@ -109,11 +109,30 @@ class GeofenceManager {
   }
 
   Future<void> init() async {
+    // 이미 서비스가 실행 중이라면 중복으로 시작할 필요가 없으므로 바로 반환한다.
+    if (_running) {
+      return;
+    }
+
+    // start() 호출 전에 실행 중 플래그를 true로 먼저 바꿔둔다.
+    // 이렇게 하면 start() 진행 중 예외가 발생해도 재시도할 수 있도록 상태를 명확히 관리할 수 있다.
+    _running = true;
+
     try {
       // 위치 권한이 허용된 경우에만 start()가 성공한다.
       await _service.start();
-      _running = true;
+    } on GeofenceException catch (e) {
+      // 이미 실행 중이라는 에러 코드는 정상 흐름으로 간주하고 조용히 빠져나온다.
+      if (e.errorCode == ErrorCodes.ALREADY_STARTED) {
+        return;
+      }
+
+      // 그 외 예외는 로그를 남기고, 재시도할 수 있도록 상태를 원복한다.
+      _running = false;
+      debugPrint('지오펜스 시작 실패: $e');
     } catch (e) {
+      // GeofenceException 외의 예외도 동일하게 처리해 재시도가 가능하도록 한다.
+      _running = false;
       debugPrint('지오펜스 시작 실패: $e');
     }
   }
