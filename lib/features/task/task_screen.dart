@@ -9,6 +9,8 @@ import '../../data/repositories.dart';
 import '../event/edit_event_screen.dart';
 import '../home/battery_controller.dart';
 import '../../services/notifications.dart';
+import '../event/event_colors.dart'; // 이벤트에 저장된 색상 키를 실제 색상으로 변환하는 헬퍼
+import '../event/event_icons.dart'; // 이벤트에 저장된 아이콘 키를 실제 아이콘으로 변환하는 헬퍼
 
 /// 실행 중인 일정과 전체 일정을 보여주는 화면
 ///
@@ -343,9 +345,11 @@ class _SimpleEventTile extends StatelessWidget {
     final typeTag =
         event.type.name[0].toUpperCase() + event.type.name.substring(1);
 
-    // 일정 타입별 아이콘과 배경색 정의
-    final iconData = _iconFor(event.type);
-    final iconBg = _iconBg(event.type);
+    // ------------------------------ 아이콘/색상 매칭 ------------------------------
+    // 홈 화면과 동일하게, 사용자가 일정 생성 시 선택한 아이콘/색상을 그대로 사용한다.
+    // 초보자도 이해할 수 있도록 "아이콘은 iconName, 색상은 colorName"에서 가져온다는 점을 명시한다.
+    final iconData = iconDataFromName(event.iconName); // 아이콘 식별자 -> 실제 아이콘 데이터
+    final iconBg = colorFromName(event.colorName); // 색상 식별자 -> 실제 배경색
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -367,10 +371,13 @@ class _SimpleEventTile extends StatelessWidget {
             width: 48,
             height: 48,
             decoration: BoxDecoration(
-              color: iconBg,
+              color: iconBg, // 선택한 색상으로 둥근 배경을 채워 홈 화면과 동일하게 보이도록 처리
               shape: BoxShape.circle,
             ),
-            child: Icon(iconData, color: Colors.white),
+            child: Icon(
+              iconData,
+              color: Colors.white,
+            ), // 둥근 배경 위에 흰색 아이콘을 배치하여 시각적으로 통일감을 준다.
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -459,33 +466,6 @@ class _SimpleEventTile extends StatelessWidget {
     return '$sign${change.toStringAsFixed(1)}%';
   }
 
-  // 일정 타입별 아이콘 결정
-  IconData _iconFor(EventType type) {
-    switch (type) {
-      case EventType.work:
-        return Icons.design_services; // 작업
-      case EventType.rest:
-        return Icons.self_improvement; // 휴식
-      case EventType.sleep:
-        return Icons.nights_stay; // 수면
-      case EventType.neutral:
-        return Icons.hourglass_bottom; // 기타
-    }
-  }
-
-  // 일정 타입별 배경색 결정
-  Color _iconBg(EventType type) {
-    switch (type) {
-      case EventType.work:
-        return const Color(0xFF9B51E0); // 보라색
-      case EventType.rest:
-        return const Color(0xFFFF8748); // 주황색
-      case EventType.sleep:
-        return const Color(0xFF26C6DA); // 파란색
-      case EventType.neutral:
-        return const Color(0xFF6FCF97); // 초록색
-    }
-  }
 }
 
 /// 태그를 예쁘게 보여주는 말풍선 위젯
