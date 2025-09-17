@@ -62,6 +62,7 @@ class ScheduleDetailScreen extends ConsumerWidget {
           _detailTile('트리거', schedule.triggerType.koLabel),
           _detailTile('요일/공휴일 조건', schedule.dayCondition.koLabel),
           _detailTile('프리셋', schedule.presetType.koLabel),
+          _detailTile('자동 실행', schedule.autoAction.koLabel),
           _detailTile('미실행 시 알림', schedule.remindIfNotExecuted ? '사용' : '사용 안 함'),
           _detailTile('상태', schedule.executed ? '실행 완료' : '대기 중'),
           if (schedule.useLocation)

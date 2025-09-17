@@ -220,6 +220,7 @@ class _EditEventState extends ConsumerState<EditEventScreen> {
   ScheduleTriggerType _triggerType = ScheduleTriggerType.arrive; // 도착/이탈 트리거
   ScheduleDayCondition _dayCondition = ScheduleDayCondition.always; // 요일 조건
   SchedulePresetType _presetType = SchedulePresetType.move; // 알림 문구 프리셋
+  ScheduleAutoAction _autoAction = ScheduleAutoAction.none; // 도착/이탈 시 자동 실행 동작
   bool _remindIfNotExecuted = true; // 미실행 시 반복 알림 여부
   bool _scheduleExecuted = false; // 기존 일정이 이미 실행 완료인지 기록
   DateTime? _scheduleCreatedAt; // 기존 일정 생성 시각(없으면 새로 생성)
@@ -352,6 +353,7 @@ class _EditEventState extends ConsumerState<EditEventScreen> {
       _triggerType = schedule.triggerType;
       _dayCondition = schedule.dayCondition;
       _presetType = schedule.presetType;
+      _autoAction = schedule.autoAction;
       _remindIfNotExecuted = schedule.remindIfNotExecuted;
       _scheduleExecuted = schedule.executed;
       _scheduleCreatedAt = schedule.createdAt;
@@ -671,7 +673,13 @@ class _EditEventState extends ConsumerState<EditEventScreen> {
                   subtitle: const Text('지오펜스를 만들어 도착/이탈 시 알림을 받습니다.'),
                   value: _useLocation,
                   onChanged: (value) {
-                    setState(() => _useLocation = value);
+                    setState(() {
+                      _useLocation = value;
+                      if (!value) {
+                        // 위치 기능을 끌 때는 자동 실행 동작도 함께 초기화한다.
+                        _autoAction = ScheduleAutoAction.none;
+                      }
+                    });
                   },
                 ),
                 if (_useLocation) ...[
@@ -737,6 +745,25 @@ class _EditEventState extends ConsumerState<EditEventScreen> {
                   ),
                   const SizedBox(height: 12),
                   MapPreview(lat: _lat, lng: _lng, radius: _radius),
+                  const SizedBox(height: 16),
+                  // 자동 실행 동작 선택: 도착/이탈 시 어떤 행동을 할지 드롭다운으로 지정
+                  DropdownButtonFormField<ScheduleAutoAction>(
+                    value: _autoAction,
+                    decoration: const InputDecoration(
+                      labelText: '자동 실행 동작',
+                      helperText: '해당 위치에서 이벤트를 자동 시작하거나 종료할지 선택합니다.',
+                    ),
+                    items: ScheduleAutoAction.values
+                        .map((action) => DropdownMenuItem(
+                              value: action,
+                              child: Text(action.koLabel),
+                            ))
+                        .toList(),
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() => _autoAction = value);
+                    },
+                  ),
                   const SizedBox(height: 16),
                   _buildScheduleRadioSection<ScheduleTriggerType>(
                     title: '트리거 유형',
@@ -917,6 +944,8 @@ class _EditEventState extends ConsumerState<EditEventScreen> {
                             executed: _scheduleExecuted,
                             createdAt: _loadedSchedule?.createdAt ?? _scheduleCreatedAt ?? now,
                             updatedAt: now,
+                            autoAction:
+                                _useLocation ? _autoAction : ScheduleAutoAction.none,
                           );
                           await scheduleRepo.saveSchedule(schedule);
                           await scheduleRepo.addLog('이벤트와 연동된 일정 저장: ${schedule.title}',

@@ -12,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/scale.dart'; // 디자인 시안의 px 값을 기기 해상도에 맞게 변환하는 헬퍼
 import '../../data/models.dart'; // 기존 시간표(Event) 모델
 import '../../data/repositories.dart'; // 기존 이벤트/설정 저장소
+import '../../data/schedule_models.dart'; // 지오펜스 일정 모델과 자동 실행 설정
 import '../../data/schedule_repository.dart'; // 위치 기반 일정 레포지토리 프로바이더
 import '../../services/geofence_manager.dart'; // 지오펜스 매니저 (동기화 담당)
 import '../../services/notifications.dart'; // 로컬 알림 서비스
@@ -67,14 +68,14 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
         next.whenData((payload) {
           if (!mounted) return;
           // 비동기 처리를 기다릴 필요가 없으므로 unawaited 사용
-          unawaited(_handleAutoStartFromGeofence(payload));
+          unawaited(_handleAutoActionFromGeofence(payload));
         });
       },
     );
     // 이미 대기 중인 값이 있다면 즉시 처리하여 놓치지 않도록 한다.
     ref.read(geofenceTriggerStreamProvider).whenData((payload) {
       if (!mounted) return;
-      unawaited(_handleAutoStartFromGeofence(payload));
+      unawaited(_handleAutoActionFromGeofence(payload));
     });
 
     // 3) 첫 프레임이 그려진 직후 위치 권한을 요청하고 지오펜스를 동기화한다.
@@ -364,8 +365,8 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
     await _clearRunningTask();
   }
 
-  /// 지오펜스 매니저가 자동 실행을 요청했을 때 실제 이벤트를 시작하는 헬퍼
-  Future<void> _handleAutoStartFromGeofence(
+  /// 지오펜스 매니저가 자동 실행을 요청했을 때 실제 이벤트를 처리하는 헬퍼
+  Future<void> _handleAutoActionFromGeofence(
       GeofenceTriggeredEvent payload) async {
     if (!mounted) return; // 위젯이 이미 파괴되었다면 더 진행하지 않는다.
 
@@ -390,45 +391,87 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
       return;
     }
 
-    if (_runningId == target.id) {
-      // 동일 이벤트가 이미 실행 중이면 중복 실행을 방지한다.
-      await scheduleRepo.addLog(
-        '이미 실행 중인 이벤트라 자동 실행을 건너뜁니다: ${target.title}',
-        scheduleId: payload.schedule.id,
-      );
-      return;
+    switch (payload.action) {
+      case ScheduleAutoAction.startEvent:
+        if (_runningId == target.id) {
+          // 동일 이벤트가 이미 실행 중이면 중복 실행을 방지한다.
+          await scheduleRepo.addLog(
+            '이미 실행 중인 이벤트라 자동 실행을 건너뜁니다: ${target.title}',
+            scheduleId: payload.schedule.id,
+          );
+          return;
+        }
+
+        if (_runningId != null && _runningId != target.id) {
+          // 다른 이벤트가 진행 중이면 충돌을 피하기 위해 자동 실행을 취소한다.
+          await scheduleRepo.addLog(
+            '다른 이벤트($_runningId)가 진행 중이라 자동 실행을 생략했습니다.',
+            scheduleId: payload.schedule.id,
+          );
+          debugPrint('자동 실행이 충돌로 인해 취소됨: 현재 $_runningId, 요청 ${target.id}');
+          return;
+        }
+
+        final baseDuration = target.endAt.difference(target.startAt);
+        final remain = _remainMap[target.id] ?? baseDuration;
+        if (remain <= Duration.zero) {
+          await scheduleRepo.addLog(
+            '남은 시간이 없어 자동 실행을 건너뜁니다: ${target.title}',
+            scheduleId: payload.schedule.id,
+          );
+          return;
+        }
+
+        await _startEvent(target);
+
+        // 자동 실행이 성공했음을 로그로 남기고, 해당 위치 일정은 완료 상태로 표시한다.
+        await scheduleRepo.setExecuted(payload.schedule.id, true);
+        await scheduleRepo.addLog(
+          '지오펜스 자동 실행 완료: ${payload.schedule.title} → ${target.title}',
+          scheduleId: payload.schedule.id,
+        );
+        debugPrint(
+            '지오펜스 자동 실행 성공: ${payload.schedule.id} → ${target.id} (${payload.status.name})');
+        break;
+      case ScheduleAutoAction.stopEvent:
+        if (_runningId != null && _runningId != target.id) {
+          // 다른 이벤트가 실행 중일 때는 의도치 않은 종료를 피하기 위해 중단한다.
+          await scheduleRepo.addLog(
+            '다른 이벤트($_runningId)가 진행 중이라 자동 종료를 건너뜁니다.',
+            scheduleId: payload.schedule.id,
+          );
+          debugPrint('자동 종료가 충돌로 인해 취소됨: 현재 $_runningId, 요청 ${target.id}');
+          return;
+        }
+
+        final baseDuration = target.endAt.difference(target.startAt);
+        final remain =
+            _runningId == target.id ? _remain : (_remainMap[target.id] ?? baseDuration);
+        if (remain <= Duration.zero) {
+          await scheduleRepo.addLog(
+            '이미 완료된 일정이라 자동 종료를 생략했습니다: ${target.title}',
+            scheduleId: payload.schedule.id,
+          );
+          return;
+        }
+
+        await _instantComplete(target);
+        await scheduleRepo.setExecuted(payload.schedule.id, true);
+        await scheduleRepo.addLog(
+          '지오펜스 자동 종료 완료: ${payload.schedule.title} → ${target.title}',
+          scheduleId: payload.schedule.id,
+        );
+        debugPrint(
+            '지오펜스 자동 종료 성공: ${payload.schedule.id} → ${target.id} (${payload.status.name})');
+        break;
+      case ScheduleAutoAction.none:
+        // 안전망: 이 상태로 호출되는 일은 없지만 혹시 몰라 로그를 남긴다.
+        await scheduleRepo.addLog(
+          '자동 실행 동작이 설정되지 않아 요청을 무시했습니다: ${payload.schedule.title}',
+          scheduleId: payload.schedule.id,
+        );
+        break;
     }
-
-    if (_runningId != null && _runningId != target.id) {
-      // 다른 이벤트가 진행 중이면 충돌을 피하기 위해 자동 실행을 취소한다.
-      await scheduleRepo.addLog(
-        '다른 이벤트($_runningId)가 진행 중이라 자동 실행을 생략했습니다.',
-        scheduleId: payload.schedule.id,
-      );
-      debugPrint('자동 실행이 충돌로 인해 취소됨: 현재 $_runningId, 요청 ${target.id}');
-      return;
-    }
-
-    final baseDuration = target.endAt.difference(target.startAt);
-    final remain = _remainMap[target.id] ?? baseDuration;
-    if (remain <= Duration.zero) {
-      await scheduleRepo.addLog(
-        '남은 시간이 없어 자동 실행을 건너뜁니다: ${target.title}',
-        scheduleId: payload.schedule.id,
-      );
-      return;
-    }
-
-    await _startEvent(target);
-
-    // 자동 실행이 성공했음을 로그로 남기고, 해당 위치 일정은 완료 상태로 표시한다.
-    await scheduleRepo.setExecuted(payload.schedule.id, true);
-    await scheduleRepo.addLog(
-      '지오펜스 자동 실행 완료: ${payload.schedule.title} → ${target.title}',
-      scheduleId: payload.schedule.id,
-    );
-    debugPrint(
-        '지오펜스 자동 실행 성공: ${payload.schedule.id} → ${target.id} (${payload.status.name})');
   }
 
   /// 남은 시간을 모두 적용하여 즉시 일정을 완료하는 함수

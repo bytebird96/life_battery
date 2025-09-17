@@ -34,6 +34,7 @@ class _ScheduleEditScreenState extends ConsumerState<ScheduleEditScreen> {
   ScheduleTriggerType _triggerType = ScheduleTriggerType.arrive;
   ScheduleDayCondition _dayCondition = ScheduleDayCondition.always;
   SchedulePresetType _presetType = SchedulePresetType.move;
+  ScheduleAutoAction _autoAction = ScheduleAutoAction.none;
   bool _remindIfNotExecuted = true;
   bool _executed = false;
   DateTime? _createdAt;
@@ -66,6 +67,7 @@ class _ScheduleEditScreenState extends ConsumerState<ScheduleEditScreen> {
       _triggerType = schedule.triggerType;
       _dayCondition = schedule.dayCondition;
       _presetType = schedule.presetType;
+      _autoAction = schedule.autoAction;
       _remindIfNotExecuted = schedule.remindIfNotExecuted;
       _executed = schedule.executed;
       _createdAt = schedule.createdAt;
@@ -124,6 +126,10 @@ class _ScheduleEditScreenState extends ConsumerState<ScheduleEditScreen> {
             onChanged: (value) {
               setState(() {
                 _useLocation = value;
+                if (!value) {
+                  // 위치 기능을 끄는 즉시 자동 실행 동작도 초기화해 혼동을 줄인다.
+                  _autoAction = ScheduleAutoAction.none;
+                }
               });
             },
           ),
@@ -181,6 +187,25 @@ class _ScheduleEditScreenState extends ConsumerState<ScheduleEditScreen> {
             ),
             // 현재 좌표가 있을 때 지도 미리보기 표시
             MapPreview(lat: _lat, lng: _lng, radius: _radius),
+            const SizedBox(height: 12),
+            // 위치 트리거 발생 시 어떤 자동 실행을 수행할지 고르는 드롭다운
+            DropdownButtonFormField<ScheduleAutoAction>(
+              value: _autoAction,
+              decoration: const InputDecoration(
+                labelText: '자동 실행 동작',
+                helperText: '도착/이탈 시 연결된 이벤트를 자동으로 시작하거나 종료할 수 있습니다.',
+              ),
+              items: ScheduleAutoAction.values
+                  .map((action) => DropdownMenuItem(
+                        value: action,
+                        child: Text(action.koLabel),
+                      ))
+                  .toList(),
+              onChanged: (value) {
+                if (value == null) return;
+                setState(() => _autoAction = value);
+              },
+            ),
           ],
           const SizedBox(height: 16),
           // 트리거 유형 라디오 버튼
@@ -382,6 +407,7 @@ class _ScheduleEditScreenState extends ConsumerState<ScheduleEditScreen> {
       executed: _executed && widget.scheduleId != null,
       createdAt: existing?.createdAt ?? _createdAt ?? now,
       updatedAt: now,
+      autoAction: _useLocation ? _autoAction : ScheduleAutoAction.none,
     );
     // DB에 저장하고 로그/지오펜스를 갱신한다.
     await repo.saveSchedule(schedule);

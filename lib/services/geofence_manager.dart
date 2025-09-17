@@ -21,6 +21,7 @@ class GeofenceTriggeredEvent {
     required this.status,
     required this.location,
     required this.triggeredAt,
+    required this.action,
   });
 
   /// 어떤 일정(Schedule)이 트리거됐는지 그대로 전달한다.
@@ -37,6 +38,9 @@ class GeofenceTriggeredEvent {
 
   /// 트리거가 감지된 시각. 로그를 남길 때 유용하다.
   final DateTime triggeredAt;
+
+  /// 자동 실행 시 어떤 동작을 수행해야 하는지(시작/종료 등)
+  final ScheduleAutoAction action;
 }
 
 /// 지오펜스 등록/해제/이벤트 처리를 담당하는 매니저
@@ -301,6 +305,14 @@ class GeofenceManager {
     );
     await _repository.addLog('알림 발송: ${schedule.title}', scheduleId: schedule.id);
 
+    if (schedule.autoAction == ScheduleAutoAction.none) {
+      await _repository.addLog(
+        '자동 실행 동작이 "없음"으로 설정되어 알림만 발송했습니다: ${schedule.title}',
+        scheduleId: schedule.id,
+      );
+      return;
+    }
+
     // 일정과 연결된 이벤트 ID를 찾아 UI로 전달한다.
     final mappedEventId = _eventIdResolver?.call(schedule);
     if (mappedEventId == null) {
@@ -319,13 +331,14 @@ class GeofenceManager {
       status: status,
       location: location,
       triggeredAt: DateTime.now(),
+      action: schedule.autoAction,
     );
 
     // 스트림 구독자들에게 트리거 결과를 통보한다.
     try {
       _triggerController.add(payload);
       await _repository.addLog(
-        '지오펜스 감지로 자동 실행 요청: ${schedule.title} → $mappedEventId',
+        '지오펜스 감지로 자동 실행 요청(${schedule.autoAction.koLabel}): ${schedule.title} → $mappedEventId',
         scheduleId: schedule.id,
       );
     } catch (e, stack) {

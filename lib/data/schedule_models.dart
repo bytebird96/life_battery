@@ -12,6 +12,13 @@ enum ScheduleDayCondition { weekday, nonHoliday, always }
 /// 미리 정의된 일정 유형(알림 문구 결정)
 enum SchedulePresetType { commuteIn, commuteOut, move, workout }
 
+/// 지오펜스가 발동했을 때 자동으로 실행할 동작 종류
+///
+/// - none: 알림만 보내고 추가 자동 실행은 하지 않는다.
+/// - startEvent: 연결된 이벤트를 자동으로 시작한다.
+/// - stopEvent: 실행 중인 이벤트를 자동으로 종료(완료 처리)한다.
+enum ScheduleAutoAction { none, startEvent, stopEvent }
+
 /// 지오펜스 일정 모델
 ///
 /// DB에는 문자열과 정수로 저장하되, 앱 내부에서는 enum과 DateTime으로 다룬다.
@@ -32,6 +39,7 @@ class Schedule {
   final bool executed;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final ScheduleAutoAction autoAction;
 
   const Schedule({
     required this.id,
@@ -50,6 +58,7 @@ class Schedule {
     required this.executed,
     required this.createdAt,
     required this.updatedAt,
+    this.autoAction = ScheduleAutoAction.none,
   });
 
   /// 신규 일정 생성 시에 사용할 헬퍼.
@@ -70,6 +79,7 @@ class Schedule {
     bool? executed,
     DateTime? createdAt,
     DateTime? updatedAt,
+    ScheduleAutoAction? autoAction,
   }) {
     return Schedule(
       id: id ?? this.id,
@@ -88,6 +98,7 @@ class Schedule {
       executed: executed ?? this.executed,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      autoAction: autoAction ?? this.autoAction,
     );
   }
 
@@ -110,6 +121,7 @@ class Schedule {
       'executed': executed ? 1 : 0,
       'created_at': createdAt.millisecondsSinceEpoch,
       'updated_at': updatedAt.millisecondsSinceEpoch,
+      'auto_action': _autoActionToDb(autoAction),
     };
   }
 
@@ -132,6 +144,7 @@ class Schedule {
       executed: (json['executed'] as int) == 1,
       createdAt: DateTime.fromMillisecondsSinceEpoch(json['created_at'] as int),
       updatedAt: DateTime.fromMillisecondsSinceEpoch(json['updated_at'] as int),
+      autoAction: _autoActionFromDb(json['auto_action'] as String?),
     );
   }
 
@@ -243,6 +256,30 @@ SchedulePresetType _presetFromDb(String raw) {
   }
 }
 
+String _autoActionToDb(ScheduleAutoAction action) {
+  switch (action) {
+    case ScheduleAutoAction.startEvent:
+      return 'START_EVENT';
+    case ScheduleAutoAction.stopEvent:
+      return 'STOP_EVENT';
+    case ScheduleAutoAction.none:
+    default:
+      return 'NONE';
+  }
+}
+
+ScheduleAutoAction _autoActionFromDb(String? raw) {
+  switch (raw) {
+    case 'START_EVENT':
+      return ScheduleAutoAction.startEvent;
+    case 'STOP_EVENT':
+      return ScheduleAutoAction.stopEvent;
+    case 'NONE':
+    default:
+      return ScheduleAutoAction.none;
+  }
+}
+
 /// enum을 보기 좋은 한글 라벨로 변환하는 간단한 확장
 extension ScheduleEnumLabel on Enum {
   String get koLabel {
@@ -265,6 +302,12 @@ extension ScheduleEnumLabel on Enum {
         return '이동';
       case SchedulePresetType.workout:
         return '운동';
+      case ScheduleAutoAction.none:
+        return '자동 실행 안 함';
+      case ScheduleAutoAction.startEvent:
+        return '연결된 이벤트 자동 시작';
+      case ScheduleAutoAction.stopEvent:
+        return '연결된 이벤트 자동 종료';
       default:
         return name;
     }

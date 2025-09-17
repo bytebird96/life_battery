@@ -8,7 +8,7 @@ import 'package:sqflite/sqflite.dart';
 /// 지오펜스 일정/로그를 SQLite에 저장하는 경량 래퍼 클래스
 class ScheduleDb {
   static const _dbName = 'geo_schedule.db';
-  static const _dbVersion = 1;
+  static const _dbVersion = 2;
   static const scheduleTable = 'schedules';
   static const logTable = 'schedule_logs';
 
@@ -42,7 +42,8 @@ class ScheduleDb {
             remind_if_not_executed INTEGER NOT NULL,
             executed INTEGER NOT NULL,
             created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL
+            updated_at INTEGER NOT NULL,
+            auto_action TEXT NOT NULL DEFAULT 'NONE'
           )
         ''');
         await db.execute('''
@@ -53,6 +54,15 @@ class ScheduleDb {
             created_at INTEGER NOT NULL
           )
         ''');
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        // v1 -> v2: 자동 실행 동작(auto_action) 컬럼 추가
+        if (oldVersion < 2) {
+          await db.execute('''
+            ALTER TABLE $scheduleTable
+            ADD COLUMN auto_action TEXT NOT NULL DEFAULT 'NONE'
+          ''');
+        }
       },
     );
   }
