@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io'; // 플랫폼(OS) 정보를 확인하기 위한 표준 라이브러리
 
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -115,6 +116,54 @@ class NotificationService {
       iOS: darwin,
       macOS: darwin,
     );
+    var androidScheduleMode = AndroidScheduleMode.exactAllowWhileIdle;
+
+    if (Platform.isAndroid) {
+      // Android 12(API 31) 이상에서는 정확한 알람 권한이 추가되었으므로 확인이 필요하다
+      final androidPlugin = _plugin
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>();
+
+      if (androidPlugin != null) {
+        final sdkInt = await _getAndroidSdkInt();
+
+        if (sdkInt != null && sdkInt >= 31) {
+          // 현재 권한 상태를 먼저 조회한다 (이미 허용되어 있다면 추가 요청 불필요)
+          var canScheduleExact =
+              await androidPlugin.canScheduleExactAlarms() ?? false;
+
+          if (!canScheduleExact) {
+            // 권한이 없다면 즉시 권한 요청 다이얼로그를 띄워 사용자에게 한번 더 확인
+            canScheduleExact =
+                await androidPlugin.requestPermissionToScheduleExactAlarms() ??
+                    false;
+          }
+
+          if (!canScheduleExact) {
+            // 여전히 허용되지 않았다면 설정 앱에서 직접 변경해야 하므로 안내 메시지를 보여준다
+            androidScheduleMode = AndroidScheduleMode.inexactAllowWhileIdle;
+
+            const guideAndroidDetails = AndroidNotificationDetails(
+              'exact_alarm_permission',
+              '정확한 알람 권한 안내',
+              channelDescription: '정확한 알람 권한이 비활성화된 경우 안내용 알림',
+              importance: Importance.max,
+              priority: Priority.high,
+            );
+            const guideDetails =
+                NotificationDetails(android: guideAndroidDetails);
+
+            await _plugin.show(
+              id + 1000000, // 예약 알림과 겹치지 않도록 충분히 큰 오프셋을 더한다
+              '정확한 알람 권한 필요',
+              '정확한 시간에 알림을 받으려면 설정 앱에서 정확한 알람 권한을 허용해 주세요.',
+              guideDetails,
+            );
+          }
+        }
+      }
+    }
+
     await _plugin.zonedSchedule(
       id,
       title,
@@ -124,8 +173,32 @@ class NotificationService {
       uiLocalNotificationDateInterpretation:
           UILocalNotificationDateInterpretation.absoluteTime,
       // 대기 모드에서도 정확한 시간에 알림을 울리도록 설정
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      androidScheduleMode: androidScheduleMode,
     );
+  }
+
+  /// 현재 단말의 안드로이드 SDK 버전을 반환한다. (다른 플랫폼은 null)
+  Future<int?> _getAndroidSdkInt() async {
+    if (!Platform.isAndroid) {
+      return null; // Android가 아니라면 SDK 버전이 의미가 없으므로 null 처리
+    }
+
+    final versionString = Platform.operatingSystemVersion;
+
+    // 대표적인 문자열 예시: "Android 13 (API 33)"
+    final apiMatch =
+        RegExp('API(?:\\s+Level)?\\s*(\\d+)').firstMatch(versionString);
+    if (apiMatch != null) {
+      return int.tryParse(apiMatch.group(1)!); // 정규식에서 추출한 숫자를 정수로 변환
+    }
+
+    // 제조사에 따라 "SDK 33"과 같은 표현을 쓰기도 하므로 보조 정규식을 한 번 더 확인
+    final sdkMatch = RegExp('SDK\\s*(\\d+)').firstMatch(versionString);
+    if (sdkMatch != null) {
+      return int.tryParse(sdkMatch.group(1)!);
+    }
+
+    return null; // 어떤 패턴에도 맞지 않으면 null 반환하여 상위 로직에서 안전하게 처리
   }
 
   /// 예약된 알림 취소
