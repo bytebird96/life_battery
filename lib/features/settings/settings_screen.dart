@@ -22,7 +22,8 @@ class SettingsScreen extends ConsumerStatefulWidget {
   ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends ConsumerState<SettingsScreen> {
+class _SettingsScreenState extends ConsumerState<SettingsScreen>
+    with WidgetsBindingObserver {
   PermissionStatus? _locationStatus;
   PermissionStatus? _alwaysStatus;
   PermissionStatus? _notificationStatus;
@@ -37,6 +38,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   @override
   void initState() {
     super.initState();
+    // 앱 라이프사이클 변화를 감지하기 위해 옵저버로 등록한다.
+    WidgetsBinding.instance.addObserver(this);
     final repo = ref.read(repositoryProvider);
     _drainController =
         TextEditingController(text: _formatRate(repo.settings.defaultDrainRate));
@@ -49,13 +52,26 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   @override
   void dispose() {
+    // 더 이상 라이프사이클 이벤트가 필요 없으므로 옵저버를 해제한다.
+    WidgetsBinding.instance.removeObserver(this);
     _drainController.dispose();
     _restController.dispose();
     _sleepController.dispose();
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // 앱이 다시 전경으로 올라오는 시점에 권한 정보를 재조회한다.
+    if (state == AppLifecycleState.resumed) {
+      _refreshStatuses();
+    }
+  }
+
   Future<void> _refreshStatuses() async {
+    // dispose 이후 호출되거나, 이미 로딩 중인 경우를 피한다.
+    if (!mounted || _loading) return;
+
     setState(() => _loading = true);
     // permission_handler로 각 권한의 현재 상태를 확인한다.
     final location = await Permission.location.status;
@@ -64,6 +80,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final battery = Platform.isAndroid
         ? await Permission.ignoreBatteryOptimizations.status
         : null;
+    // 비동기 처리 중 위젯이 dispose되었을 수 있으므로 다시 한 번 확인한다.
+    if (!mounted) return;
+
     setState(() {
       _locationStatus = location;
       _alwaysStatus = always;
@@ -71,6 +90,23 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       _batteryStatus = battery;
       _loading = false;
     });
+  }
+
+  /// 설정 화면에서 테스트 알림을 발송하는 헬퍼
+  Future<void> _showTestNotification() async {
+    // 실제 알림을 담당하는 서비스를 읽어와 즉시 사용한다.
+    final notificationService = ref.read(notificationProvider);
+    // scheduleId는 추후 식별을 위해 필요하므로 고정 문자열을 부여한다.
+    await notificationService.showScheduleReminder(
+      scheduleId: 'settings_test_notification',
+      title: '테스트 알림',
+      body: '테스트 알림',
+    );
+    if (!mounted) return;
+    // 사용자가 버튼을 눌렀을 때 어떤 일이 일어나는지 쉽게 인지하도록 스낵바로 안내한다.
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('테스트 알림을 발송했습니다. 잠시 후 알림을 확인해보세요.')),
+    );
   }
 
   @override
@@ -118,6 +154,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               title: '알림 권한',
               status: _notificationStatus,
               onRequest: () => Permission.notification.request(),
+            ),
+            const SizedBox(height: 8),
+            FilledButton.icon(
+              onPressed: _showTestNotification,
+              icon: const Icon(Icons.notifications_active),
+              label: const Text('테스트 알림 보내기'),
             ),
             if (Platform.isAndroid)
               _buildPermissionTile(
