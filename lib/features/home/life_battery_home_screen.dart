@@ -113,113 +113,6 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
     }
   }
 
-  /// 홈 화면의 "가이드" 버튼을 눌렀을 때 호출된다.
-  ///
-  /// 초보자도 쉽게 따라올 수 있도록, 가장 많이 묻는 사용법을 정리한
-  /// 모달 바텀시트를 띄워 순차적으로 안내한다.
-  void _showGuideBottomSheet() {
-    // showModalBottomSheet에 넘겨줄 기본 컨텍스트를 미리 보관한다.
-    final rootContext = context;
-    showModalBottomSheet<void>(
-      context: rootContext,
-      showDragHandle: true, // 상단에 손잡이를 노출해 끌어내릴 수 있음을 알린다.
-      builder: (sheetContext) {
-        return SafeArea(
-          // 키보드가 올라와도 내용이 가려지지 않도록 SafeArea로 감싼다.
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '라이프 배터리 이용 가이드',
-                  style: Theme.of(sheetContext).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                ),
-                const SizedBox(height: 12),
-                // 1단계: 일정 카드와 실행 버튼 소개
-                _guideItem(
-                  icon: Icons.play_circle_outline,
-                  title: '일정 실행',
-                  description:
-                      '오늘 일정 카드 우측의 ▶ 버튼을 누르면 해당 일정이 시작되고, 배터리가 자동으로 계산됩니다.',
-                ),
-                const SizedBox(height: 8),
-                // 2단계: 상세 화면 이동 안내
-                _guideItem(
-                  icon: Icons.menu_book_outlined,
-                  title: '상세 정보 확인',
-                  description:
-                      '일정 카드를 손가락으로 한 번 탭하면 상세 화면으로 이동하여 '
-                      '남은 시간과 메모를 더 자세히 확인할 수 있습니다.',
-                ),
-                const SizedBox(height: 8),
-                // 3단계: 위치 기반 일정과 권한 안내
-                _guideItem(
-                  icon: Icons.my_location,
-                  title: '위치 기반 일정 준비',
-                  description:
-                      '위치 기반 기능을 활용하려면 설정 화면에서 위치·알림 권한을 모두 허용해야 '
-                      '지오펜스가 정확히 동작합니다.',
-                ),
-                const SizedBox(height: 16),
-                FilledButton.icon(
-                  onPressed: () {
-                    // 안내를 확인한 뒤 바로 설정 화면으로 이동할 수 있도록 구성한다.
-                    Navigator.of(sheetContext).pop();
-                    if (!mounted) return; // 사용자가 화면을 나간 경우를 대비
-                    rootContext.push('/settings');
-                  },
-                  icon: const Icon(Icons.settings),
-                  label: const Text('설정 화면으로 이동'),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  /// 가이드 바텀시트에 들어갈 한 줄 설명을 위젯으로 만들어 준다.
-  ///
-  /// [icon] : 각 단계의 주제를 직관적으로 보여줄 아이콘
-  /// [title] : 단계 제목
-  /// [description] : 세부 설명 (두 줄 이상이 될 수 있으므로 Expanded로 감싼다)
-  Widget _guideItem({
-    required IconData icon,
-    required String title,
-    required String description,
-  }) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, color: const Color(0xFF3E82F7)),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                description,
-                style: const TextStyle(fontSize: 14, height: 1.4),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
   /// 상단 우측에 배치할 동그란 버튼을 재사용 가능한 형태로 생성한다.
   Widget _headerActionButton({
     required IconData icon,
@@ -636,27 +529,17 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
       body: Stack(
         clipBehavior: Clip.none, // 배터리 링의 광채가 잘리면 안 되므로 none 유지
         children: [
-          // ------------------ 상단 설정/가이드 버튼 ------------------
+          // ------------------ 상단 설정 버튼 ------------------
           Positioned(
             top: actionTop,
             right: pageSide,
             child: SafeArea(
               bottom: false, // 하단 여백은 필요 없으므로 false
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _headerActionButton(
-                    icon: Icons.help_outline,
-                    label: '가이드',
-                    onTap: _showGuideBottomSheet,
-                  ),
-                  SizedBox(width: s(context, 8)),
-                  _headerActionButton(
-                    icon: Icons.settings,
-                    label: '설정',
-                    onTap: () => context.push('/settings'),
-                  ),
-                ],
+              child: _headerActionButton(
+                // 가이드 버튼을 제거하고 설정 버튼만 노출하여 상단 액션을 간결하게 유지한다.
+                icon: Icons.settings,
+                label: '설정',
+                onTap: () => context.push('/settings'),
               ),
             ),
           ),
