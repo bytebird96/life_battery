@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:intl/date_symbol_data_local.dart';
 
 import '../../data/models.dart';
 import '../../data/repositories.dart';
@@ -35,15 +36,36 @@ class EventDetailScreen extends ConsumerStatefulWidget {
 class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
   late Duration _remain; // 화면에 표시할 남은 시간
   Timer? _timer; // 실행 중인 일정의 시간을 갱신하는 타이머
-  final DateFormat _dateFormat =
-      DateFormat('yyyy년 MM월 dd일 (E)', 'ko'); // 시작/종료 날짜 포맷터
-  final DateFormat _timeFormat =
-      DateFormat('a h시 mm분', 'ko'); // 시작/종료 시간 포맷터
+  bool _localeReady = false; // 한글 날짜 포맷 사용 준비 여부
+  late DateFormat _dateFormat; // 시작/종료 날짜 포맷터 (초기화 후 사용)
+  late DateFormat _timeFormat; // 시작/종료 시간 포맷터 (초기화 후 사용)
 
   @override
   void initState() {
     super.initState();
     _remain = widget.remain; // 전달받은 남은 시간을 초기값으로 설정
+
+    // 1) intl 패키지는 한국어 요일/오전·오후 표시를 위해 별도의 초기화가 필요하다.
+    // 2) initializeDateFormatting은 비동기로 동작하므로 완료 후 setState로 다시 그리도록 한다.
+    initializeDateFormatting('ko').then((_) {
+      if (!mounted) return; // 위젯이 사라졌다면 추가 작업 불필요
+
+      setState(() {
+        // 초기화가 끝난 뒤에야 한국어 포맷 객체를 안전하게 생성할 수 있다.
+        _dateFormat = DateFormat('yyyy년 MM월 dd일 (E)', 'ko');
+        _timeFormat = DateFormat('a h시 mm분', 'ko');
+        _localeReady = true; // 화면에서 날짜/시간을 정상적으로 보여줄 수 있음을 표시
+      });
+    }).catchError((error) {
+      if (!mounted) return; // 에러가 났더라도 위젯이 남아있을 때만 처리
+
+      setState(() {
+        // 초기화가 실패하면 기본 포맷(영문)으로라도 정보를 보여주도록 한다.
+        _dateFormat = DateFormat('yyyy-MM-dd (E)');
+        _timeFormat = DateFormat('a h:mm');
+        _localeReady = true; // 최소한의 정보 제공을 위해 로딩 상태 해제
+      });
+    });
 
     // 실행 중인 일정이라면 1초마다 남은 시간을 감소시킨다.
     if (widget.running) {
@@ -144,6 +166,18 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_localeReady) {
+      // 한국어 날짜 정보를 준비하는 동안에는 간단한 로딩 화면을 보여준다.
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Life Battery'),
+        ),
+        body: const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
     final repo = ref.watch(repositoryProvider); // 리포지토리 접근
     // 최신 일정 정보를 리포지토리에서 다시 불러온다. (수정 후에도 내용이 갱신되도록)
     final current = repo.findEventById(widget.event.id) ?? widget.event;
