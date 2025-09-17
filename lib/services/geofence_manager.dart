@@ -121,7 +121,7 @@ class GeofenceManager {
     try {
       // 위치 권한이 허용된 경우에만 start()가 성공한다.
       await _service.start();
-    } on GeofenceException catch (e) {
+    } on Exception catch (e) {
       // 이미 실행 중이라는 에러 코드는 정상 흐름으로 간주하고 조용히 빠져나온다.
       if (e.errorCode == ErrorCodes.ALREADY_STARTED) {
         return;
@@ -401,6 +401,10 @@ class GeofenceManager {
         return true;
     }
   }
+}
+
+extension on Exception {
+  get errorCode => null;
 }
 
 /// 지오펜스 매니저 주입용 프로바이더

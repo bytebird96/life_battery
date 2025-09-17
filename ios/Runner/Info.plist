@@ -2,72 +2,85 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>CFBundleDevelopmentRegion</key>
-	<string>$(DEVELOPMENT_LANGUAGE)</string>
-	<key>CFBundleDisplayName</key>
-	<string>Life Battery</string>
-	<key>CFBundleExecutable</key>
-	<string>$(EXECUTABLE_NAME)</string>
-	<key>CFBundleIdentifier</key>
-	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
-	<key>CFBundleInfoDictionaryVersion</key>
-	<string>6.0</string>
-	<key>CFBundleName</key>
-	<string>life_battery</string>
-	<key>CFBundleShortVersionString</key>
-	<string>$(FLUTTER_BUILD_NAME)</string>
-	<key>CFBundleVersion</key>
-	<string>$(FLUTTER_BUILD_NUMBER)</string>
-	<key>LSRequiresIPhoneOS</key>
-	<true/>
-	<key>UILaunchStoryboardName</key>
-	<string>LaunchScreen</string>
-	<key>UIMainStoryboardFile</key>
-	<string>Main</string>
-	<key>UISupportedInterfaceOrientations</key>
-	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
-	</array>
-	<key>UISupportedInterfaceOrientations~ipad</key>
-	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationPortraitUpsideDown</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
-	</array>
-	<key>CADisableMinimumFrameDurationOnPhone</key>
-	<true/>
-	<key>UIApplicationSupportsIndirectInputEvents</key>
-	<true/>
-        <key>ITSAppUsesNonExemptEncryption</key>
-        <false/>
-        <key>CFBundlePackageType</key>
-        <string>APPL</string>
-        <key>NSLocationWhenInUseUsageDescription</key>
-        <string>정확한 위치를 사용해 지정된 장소 도착/이탈 알림을 제공합니다.</string>
-        <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-        <string>백그라운드에서도 위치 기반 알림을 제공하기 위해 항상 위치 접근이 필요합니다.</string>
-        <key>NSLocationAlwaysUsageDescription</key>
-        <string>백그라운드에서도 위치 기반 알림을 제공하기 위해 항상 위치 접근이 필요합니다.</string>
-        <key>NSLocationTemporaryUsageDescriptionDictionary</key>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>$(DEVELOPMENT_LANGUAGE)</string>
+    <key>CFBundleDisplayName</key>
+    <string>Life Battery</string>
+    <key>CFBundleExecutable</key>
+    <string>$(EXECUTABLE_NAME)</string>
+    <key>CFBundleIdentifier</key>
+    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>life_battery</string>
+    <key>CFBundleShortVersionString</key>
+    <string>$(FLUTTER_BUILD_NAME)</string>
+    <key>CFBundleVersion</key>
+    <string>$(FLUTTER_BUILD_NUMBER)</string>
+    <key>LSRequiresIPhoneOS</key>
+    <true/>
+    <key>UILaunchStoryboardName</key>
+    <string>LaunchScreen</string>
+    <key>UIMainStoryboardFile</key>
+    <string>Main</string>
+
+    <key>UISupportedInterfaceOrientations</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
+    <key>UISupportedInterfaceOrientations~ipad</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationPortraitUpsideDown</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
+
+    <key>CADisableMinimumFrameDurationOnPhone</key>
+    <true/>
+    <key>UIApplicationSupportsIndirectInputEvents</key>
+    <true/>
+
+    <key>ITSAppUsesNonExemptEncryption</key>
+    <false/>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+
+    <!-- 위치 권한들 OK -->
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>정확한 위치를 사용해 지정된 장소 도착/이탈 알림을 제공합니다.</string>
+    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+    <string>백그라운드에서도 위치 기반 알림을 제공하기 위해 항상 위치 접근이 필요합니다.</string>
+    <key>NSLocationAlwaysUsageDescription</key>
+    <string>백그라운드에서도 위치 기반 알림을 제공하기 위해 항상 위치 접근이 필요합니다.</string>
+
+    <!-- 임시 정밀 위치: 여기의 키 이름은 코드에서 requestTemporaryFullAccuracyAuthorization 시 넘기는 purposeKey와 일치해야 함 -->
+    <key>NSLocationTemporaryUsageDescriptionDictionary</key>
+    <dict>
+        <key>Purpose</key>
+        <string>지오펜스 기능을 위해 일시적으로 정밀 위치를 사용합니다.</string>
+    </dict>
+
+    <!-- ★ 모션 권한: 최상위에 단독 키로 -->
+    <key>NSMotionUsageDescription</key>
+    <string>에너지 관리 기능을 위해 사용자의 움직임/가속도 데이터를 분석합니다.</string>
+
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>location</string>
+    </array>
+
+    <key>CFBundleURLTypes</key>
+    <array>
         <dict>
-                <key>Purpose</key>
-                <string>지오펜스 기능을 위해 일시적으로 정밀 위치를 사용합니다.</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>myapp</string>
+            </array>
         </dict>
-        <key>UIBackgroundModes</key>
-        <array>
-                <string>location</string>
-        </array>
-        <key>CFBundleURLTypes</key>
-        <array>
-                <dict>
-                        <key>CFBundleURLSchemes</key>
-                        <array>
-                                <string>myapp</string>
-                        </array>
-                </dict>
-        </array>
+    </array>
 </dict>
 </plist>

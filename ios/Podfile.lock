@@ -93,7 +93,7 @@ SPEC CHECKSUMS:
   fl_location: 68b4a6c4aad2a453493ff66f196e0748280cf43e
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
   flutter_activity_recognition: 5c3b026997742b01e82424ef257db9640822ad77
-  flutter_local_notifications: 4cde75091f6327eb8517fa068a0a5950212d2086
+  flutter_local_notifications: df98d66e515e1ca797af436137b4459b160ad8c9
   geofence_service: e007ddec3cf8b85531e8f7b202c1ceabca669d64
   geolocator_apple: 66b711889fd333205763b83c9dcf0a57a28c7afd
   path_provider_foundation: 2b6b4c569c0fb62ec74538f866245ac84301af46
