@@ -119,47 +119,37 @@ class NotificationService {
     var androidScheduleMode = AndroidScheduleMode.exactAllowWhileIdle;
 
     if (Platform.isAndroid) {
-      // Android 12(API 31) 이상에서는 정확한 알람 권한이 추가되었으므로 확인이 필요하다
+      // Android 단말에서만 정확한 알람 권한을 확인하면 되므로 우선 안드로이드용 플러그인 인스턴스를 가져온다
       final androidPlugin = _plugin
           .resolvePlatformSpecificImplementation<
               AndroidFlutterLocalNotificationsPlugin>();
 
       if (androidPlugin != null) {
-        final sdkInt = await _getAndroidSdkInt();
+        // 아래 헬퍼가 실제로 권한을 요청하고 결과를 true/false로 반환한다
+        final hasExactPermission =
+            await _ensureExactAlarmPermission(androidPlugin);
 
-        if (sdkInt != null && sdkInt >= 31) {
-          // 현재 권한 상태를 먼저 조회한다 (이미 허용되어 있다면 추가 요청 불필요)
-          var canScheduleExact =
-              await androidPlugin.canScheduleExactAlarms() ?? false;
+        if (!hasExactPermission) {
+          // 권한이 허용되지 않은 경우에는 정확한 알람을 사용할 수 없으므로
+          // 시스템이 허용하는 범위 내(대략적인 시간)에서 알람을 울리는 모드로 폴백한다
+          androidScheduleMode = AndroidScheduleMode.inexactAllowWhileIdle;
 
-          if (!canScheduleExact) {
-            // 권한이 없다면 즉시 권한 요청 다이얼로그를 띄워 사용자에게 한번 더 확인
-            canScheduleExact =
-                await androidPlugin.requestPermissionToScheduleExactAlarms() ??
-                    false;
-          }
+          const guideAndroidDetails = AndroidNotificationDetails(
+            'exact_alarm_permission',
+            '정확한 알람 권한 안내',
+            channelDescription: '정확한 알람 권한이 비활성화된 경우 안내용 알림',
+            importance: Importance.max,
+            priority: Priority.high,
+          );
+          const guideDetails =
+              NotificationDetails(android: guideAndroidDetails);
 
-          if (!canScheduleExact) {
-            // 여전히 허용되지 않았다면 설정 앱에서 직접 변경해야 하므로 안내 메시지를 보여준다
-            androidScheduleMode = AndroidScheduleMode.inexactAllowWhileIdle;
-
-            const guideAndroidDetails = AndroidNotificationDetails(
-              'exact_alarm_permission',
-              '정확한 알람 권한 안내',
-              channelDescription: '정확한 알람 권한이 비활성화된 경우 안내용 알림',
-              importance: Importance.max,
-              priority: Priority.high,
-            );
-            const guideDetails =
-                NotificationDetails(android: guideAndroidDetails);
-
-            await _plugin.show(
-              id + 1000000, // 예약 알림과 겹치지 않도록 충분히 큰 오프셋을 더한다
-              '정확한 알람 권한 필요',
-              '정확한 시간에 알림을 받으려면 설정 앱에서 정확한 알람 권한을 허용해 주세요.',
-              guideDetails,
-            );
-          }
+          await _plugin.show(
+            id + 1000000, // 예약 알림과 겹치지 않도록 충분히 큰 오프셋을 더한다
+            '정확한 알람 권한 필요',
+            '정확한 시간에 알림을 받으려면 설정 앱에서 정확한 알람 권한을 허용해 주세요.',
+            guideDetails,
+          );
         }
       }
     }
@@ -227,6 +217,41 @@ class NotificationService {
       details,
       payload: scheduleId,
     );
+  }
+
+  /// Android 12(API 31) 이상에서 정확한 알람을 사용할 수 있도록 권한을 확인/요청한다.
+  ///
+  /// - [androidPlugin] : 안드로이드 전용 알림 플러그인 인스턴스
+  /// - return          : 정확한 알람 사용이 가능한 경우 true, 그렇지 않으면 false
+  Future<bool> _ensureExactAlarmPermission(
+    AndroidFlutterLocalNotificationsPlugin androidPlugin,
+  ) async {
+    // API 31 미만에서는 별도의 권한이 존재하지 않으므로 그대로 true를 반환한다
+    final sdkInt = await _getAndroidSdkInt();
+    if (sdkInt != null && sdkInt < 31) {
+      return true;
+    }
+
+    try {
+      // 플러그인의 일부 버전에서는 canScheduleExactAlarms / requestPermissionToScheduleExactAlarms
+      // 메서드가 없을 수도 있으므로, dynamic으로 호출하고 예외를 안전하게 처리한다
+      final dynamic dynamicPlugin = androidPlugin;
+
+      final canScheduleExact =
+          await dynamicPlugin.canScheduleExactAlarms() as bool? ?? false;
+      if (canScheduleExact) {
+        return true; // 이미 권한이 허용된 상태이므로 추가 조치 없음
+      }
+
+      final granted = await dynamicPlugin
+              .requestPermissionToScheduleExactAlarms() as bool? ??
+          false;
+      return granted;
+    } catch (_) {
+      // 메서드가 존재하지 않거나 호출 시 오류가 발생하면 (주로 구버전 안드로이드나 플러그인 버전 차이)
+      // 정확한 알람을 신뢰할 수 없으므로 false를 반환하여 상위 로직에서 폴백하도록 한다
+      return false;
+    }
   }
 }
 
