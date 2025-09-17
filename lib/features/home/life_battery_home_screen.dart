@@ -38,6 +38,7 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
   double _runningRate = 0; // 실행 중 이벤트의 시간당 배터리 증감율
   final Map<String, Duration> _remainMap = {}; // 각 이벤트별 남은 시간 기록
   Timer? _countdown; // 1초마다 남은 시간을 갱신하는 타이머
+  bool _loadingState = false; // SharedPreferences로부터 상태를 불러오는 중인지 여부
 
   // ======================== 신규: 권한/지오펜스 준비 상태 ========================
   bool _requesting = false; // 권한 요청이 중복 실행되는 것을 막기 위한 플래그
@@ -196,31 +197,59 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
   }
 
   Future<void> _loadState() async {
-    final prefs = await SharedPreferences.getInstance();
+    // 동시에 여러 번 불러와 상태가 꼬이지 않도록 가드 처리
+    if (_loadingState) return;
+    _loadingState = true;
 
-    final remainStr = prefs.getString('remainMap');
-    if (remainStr != null) {
-      final decoded = Map<String, dynamic>.from(jsonDecode(remainStr));
-      decoded.forEach((key, value) {
-        _remainMap[key] = Duration(seconds: value as int);
-      });
-    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
 
-    final savedBattery = prefs.getDouble('battery');
-    if (savedBattery != null) {
-      ref.read(batteryControllerProvider.notifier).state = savedBattery;
-    }
+      // -------------------- 남은 시간 맵 복원 --------------------
+      final remainStr = prefs.getString('remainMap');
+      if (remainStr != null) {
+        final decoded = Map<String, dynamic>.from(jsonDecode(remainStr));
+        decoded.forEach((key, value) {
+          // SharedPreferences에는 초 단위의 정수가 저장되어 있으므로
+          // Duration으로 다시 감싸 홈 화면에서 즉시 사용할 수 있게 만든다.
+          _remainMap[key] = Duration(seconds: value as int);
+        });
+      }
 
-    final runningId = prefs.getString('taskId');
-    if (runningId != null) {
+      // -------------------- 배터리 퍼센트 복원 --------------------
+      final savedBattery = prefs.getDouble('battery');
+      if (savedBattery != null) {
+        // Task 화면에서 작업을 시작/중지했다면 배터리 값이 저장되어 있으므로
+        // 홈에서도 동일한 값으로 맞춰 사용자에게 일관된 숫자를 보여준다.
+        ref.read(batteryControllerProvider.notifier).state = savedBattery;
+      }
+
+      // -------------------- 실행 중 작업 복원 --------------------
+      final runningId = prefs.getString('taskId');
+      if (runningId == null) {
+        // 저장된 실행 중 작업이 없다면 홈 화면에서도 즉시 상태를 초기화한다.
+        _countdown?.cancel();
+        if (mounted) {
+          setState(() {
+            _runningId = null;
+            _runningRate = 0;
+            _remain = Duration.zero;
+          });
+        }
+        await _saveRemainMap();
+        return;
+      }
+
       final rate = prefs.getDouble('ratePerHour') ?? 0;
       final durationSec = prefs.getInt('duration') ?? 0;
       final startMillis = prefs.getInt('startTime') ?? 0;
 
+      // Task 화면에서 작업을 시작한 시각과 현재 시각의 차이를 계산해
+      // 홈 화면에 돌아왔을 때 이어서 진행할 수 있도록 남은 시간을 구한다.
       final elapsed = DateTime.now().millisecondsSinceEpoch ~/ 1000 -
           startMillis ~/ 1000;
       final usedSec = elapsed > durationSec ? durationSec : elapsed;
 
+      // elapsed 동안 배터리가 얼마나 변했는지 다시 계산한 뒤 저장한다.
       final perSecond = rate / 3600;
       var battery = ref.read(batteryControllerProvider);
       battery += perSecond * usedSec;
@@ -235,22 +264,30 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
         final repo = ref.read(repositoryProvider);
         try {
           final e = repo.events.firstWhere((ev) => ev.id == runningId);
-          await _startEvent(e);
+          await _startEvent(e); // 홈 화면이 주도권을 가져와 계속 진행한다.
         } catch (_) {
           _remainMap.remove(runningId);
           await _saveRemainMap();
         }
       } else {
+        // 남은 시간이 모두 소진된 상태라면 UI만 초기화하고 정보는 제거한다.
         _remainMap[runningId] = Duration.zero;
         await _clearRunningTask();
         await _saveRemainMap();
+        if (mounted) {
+          setState(() {
+            _runningId = null;
+            _runningRate = 0;
+            _remain = Duration.zero;
+          });
+        }
       }
-    } else {
-      await _saveRemainMap();
-    }
 
-    if (!mounted) return;
-    setState(() {});
+      if (!mounted) return;
+      setState(() {});
+    } finally {
+      _loadingState = false;
+    }
   }
 
   // ------------------------------ 일정 제어 ------------------------------
@@ -627,7 +664,11 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
                     // Navigator 대신 GoRouter의 context.push를 사용해
                     // '/tasks' 라우트를 부른다. (뒤로가기도 동일하게 동작)
                     await context.push('/tasks');
-                    if (mounted) setState(() {});
+                    if (!mounted) return;
+                    // Task 화면에서 작업을 시작/중지했을 수 있으므로
+                    // 다시 홈으로 돌아오면 SharedPreferences에 저장된 정보를
+                    // 재확인해 "실행 중" 배지가 올바르게 표시되도록 한다.
+                    await _loadState();
                   },
                 ),
               ),
