@@ -92,6 +92,23 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
     });
   }
 
+  /// 설정 화면에서 테스트 알림을 발송하는 헬퍼
+  Future<void> _showTestNotification() async {
+    // 실제 알림을 담당하는 서비스를 읽어와 즉시 사용한다.
+    final notificationService = ref.read(notificationProvider);
+    // scheduleId는 추후 식별을 위해 필요하므로 고정 문자열을 부여한다.
+    await notificationService.showScheduleReminder(
+      scheduleId: 'settings_test_notification',
+      title: '테스트 알림',
+      body: '테스트 알림',
+    );
+    if (!mounted) return;
+    // 사용자가 버튼을 눌렀을 때 어떤 일이 일어나는지 쉽게 인지하도록 스낵바로 안내한다.
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('테스트 알림을 발송했습니다. 잠시 후 알림을 확인해보세요.')),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final logs = ref.watch(scheduleLogStreamProvider);
@@ -137,6 +154,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
               title: '알림 권한',
               status: _notificationStatus,
               onRequest: () => Permission.notification.request(),
+            ),
+            const SizedBox(height: 8),
+            FilledButton.icon(
+              onPressed: _showTestNotification,
+              icon: const Icon(Icons.notifications_active),
+              label: const Text('테스트 알림 보내기'),
             ),
             if (Platform.isAndroid)
               _buildPermissionTile(
