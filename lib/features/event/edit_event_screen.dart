@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:intl/intl.dart';
 
 import '../../core/compute.dart';
 import '../../data/models.dart';
@@ -196,7 +197,10 @@ class _EditEventState extends ConsumerState<EditEventScreen> {
   // --- 사용자가 입력할 값들 ---
   String _title = ''; // 일정 제목
   String _content = ''; // 일정 설명
+  final _minutesController = TextEditingController(); // 소요 시간을 표시/수정할 입력 컨트롤러
   int _minutes = 0; // 소요 시간(분)
+  late DateTime _startAt; // 사용자가 선택한 시작 시각
+  late DateTime _endAt; // 사용자가 선택한 종료 시각
   double _battery = 0.0; // 배터리 변화량(절대값, 양수만 저장)
   bool _isCharge = false; // true=충전, false=소모 (기본값: 소모)
   String _iconName = defaultEventIconName; // 선택된 아이콘 식별자 (문자열)
@@ -229,12 +233,15 @@ class _EditEventState extends ConsumerState<EditEventScreen> {
   @override
   void initState() {
     super.initState();
+    final now = DateTime.now(); // 현재 시각을 미리 계산 (여러 곳에서 사용)
     final e = widget.event; // 전달받은 일정이 있는지 확인
     if (e != null) {
       // 기존 일정 정보를 입력 폼에 미리 채워 넣는다.
       _title = e.title;
       _content = e.content ?? '';
-      _minutes = e.endAt.difference(e.startAt).inMinutes;
+      _startAt = e.startAt; // 기존 일정의 시작 시각을 그대로 가져온다.
+      _endAt = e.endAt; // 기존 일정의 종료 시각도 함께 저장한다.
+      _minutes = _endAt.difference(_startAt).inMinutes;
       final total = (e.ratePerHour ?? 0) * (_minutes / 60); // 전체 배터리 변화량
       _isCharge = total >= 0; // 0 이상이면 충전, 음수면 소모
       _battery = total.abs(); // 표시를 위해 절대값 사용
@@ -250,7 +257,13 @@ class _EditEventState extends ConsumerState<EditEventScreen> {
       }
     } else {
       _useManualBatteryInput = false; // 신규 등록 시 기본적으로 자동 계산 사용
+      _startAt = now; // 새 일정은 현재 시각을 기본 시작 시각으로 사용한다.
+      _endAt = now.add(const Duration(hours: 1)); // 기본 종료 시각은 1시간 뒤로 설정한다.
+      _minutes = _endAt.difference(_startAt).inMinutes; // 기본 소요 시간은 60분으로 맞춘다.
     }
+
+    // 초기 소요 시간을 텍스트 필드에도 반영해 사용자가 현재 값을 바로 확인할 수 있게 한다.
+    _updateMinutesTextField();
 
     if (e != null) {
       // 위치 기반 일정과 연동되어 있다면 추가 정보를 비동기로 불러온다.
@@ -264,6 +277,7 @@ class _EditEventState extends ConsumerState<EditEventScreen> {
     _placeController.dispose();
     _latController.dispose();
     _lngController.dispose();
+    _minutesController.dispose();
     super.dispose();
   }
 
@@ -278,6 +292,15 @@ class _EditEventState extends ConsumerState<EditEventScreen> {
       }
     }
     return null; // 어떤 강도와도 맞지 않는 경우 null 반환
+  }
+
+  /// _minutes 값이 갱신될 때마다 텍스트 필드의 표시도 함께 맞춰주는 헬퍼
+  void _updateMinutesTextField() {
+    final text = _minutes > 0 ? _minutes.toString() : '';
+    _minutesController.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
   }
 
   /// 강도/시간/직접 입력 상태를 종합해 총 배터리 변화를 계산한다.
@@ -333,7 +356,11 @@ class _EditEventState extends ConsumerState<EditEventScreen> {
       _scheduleExecuted = schedule.executed;
       _scheduleCreatedAt = schedule.createdAt;
       _loadedSchedule = schedule;
+      _startAt = schedule.startAt; // 일정과 동일한 시작 시각으로 동기화한다.
+      _endAt = schedule.endAt; // 종료 시각도 동일하게 맞춰준다.
+      _minutes = _endAt.difference(_startAt).inMinutes; // 소요 시간을 다시 계산해 둔다.
     });
+    _updateMinutesTextField(); // UI에 반영되도록 텍스트 필드도 갱신한다.
   }
 
   /// 현재 위치 버튼을 눌렀을 때 호출되는 함수. 지오로케이터를 이용해 좌표를 갱신한다.
@@ -375,6 +402,89 @@ class _EditEventState extends ConsumerState<EditEventScreen> {
         setState(() => _gettingLocation = false);
       }
     }
+  }
+
+  /// 시작/종료 시각을 고르는 UI를 따로 추출했다.
+  Widget _buildDateTimeRow(BuildContext context) {
+    final formatter = DateFormat('yyyy-MM-dd HH:mm'); // 날짜/시간을 보기 좋게 포맷팅
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '시작/종료 시각',
+          style: TextStyle(fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            Expanded(
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('시작 시각'),
+                subtitle: Text(formatter.format(_startAt)),
+                onTap: () => _pickDateTime(isStart: true),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('종료 시각'),
+                subtitle: Text(formatter.format(_endAt)),
+                onTap: () => _pickDateTime(isStart: false),
+              ),
+            ),
+          ],
+        ),
+        const Text(
+          '시간을 직접 조정하면 위의 소요 시간이 자동으로 업데이트됩니다.',
+          style: TextStyle(fontSize: 12, color: Color(0xFF55586A)),
+        ),
+      ],
+    );
+  }
+
+  /// 날짜/시간 선택 다이얼로그를 호출해 시작 또는 종료 시각을 수정한다.
+  Future<void> _pickDateTime({required bool isStart}) async {
+    final base = isStart ? _startAt : _endAt; // 현재 선택되어 있는 기준 시각
+    final date = await showDatePicker(
+      context: context,
+      initialDate: base,
+      firstDate: DateTime(2000), // 너무 과거/미래는 제한한다.
+      lastDate: DateTime(2100),
+    );
+    if (date == null) {
+      return; // 사용자가 취소한 경우
+    }
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(base),
+    );
+    if (time == null) {
+      return; // 시간 선택도 취소하면 종료
+    }
+    final selected = DateTime(date.year, date.month, date.day, time.hour, time.minute);
+    final previousMinutes = _endAt.difference(_startAt).inMinutes; // 기존 소요 시간 기억
+    final fallbackMinutes = _minutes > 0
+        ? _minutes
+        : (previousMinutes > 0 ? previousMinutes : 60); // 0 이하일 때 기본값 보정
+
+    setState(() {
+      if (isStart) {
+        _startAt = selected; // 시작 시각을 새로 지정
+        final keepMinutes = fallbackMinutes > 0 ? fallbackMinutes : 60;
+        _endAt = _startAt.add(Duration(minutes: keepMinutes)); // 기존 소요 시간을 유지하도록 종료 시각을 이동
+      } else {
+        if (selected.isAfter(_startAt)) {
+          _endAt = selected; // 정상적으로 더 늦은 시각이면 그대로 반영
+        } else {
+          _endAt = _startAt.add(const Duration(minutes: 1)); // 최소 1분 이상 차이가 나도록 보정
+        }
+      }
+      final diff = _endAt.difference(_startAt).inMinutes;
+      _minutes = diff > 0 ? diff : 1; // 다시 계산한 소요 시간을 상태에 반영
+    });
+    _updateMinutesTextField(); // 숫자 입력창도 최신 값으로 동기화
   }
 
   /// 위치 기반 일정 옵션에 공통으로 사용하는 라디오 리스트 UI를 생성한다.
@@ -429,12 +539,17 @@ class _EditEventState extends ConsumerState<EditEventScreen> {
             ),
             // 소요 시간 입력 필드 (분 단위)
             TextFormField(
+              controller: _minutesController,
               decoration: const InputDecoration(labelText: '소요 시간(분)'),
               keyboardType: TextInputType.number,
-              initialValue: _minutes == 0 ? '' : _minutes.toString(),
               onChanged: (v) {
+                final parsed = int.tryParse(v);
                 setState(() {
-                  _minutes = int.tryParse(v) ?? 0; // 값이 바뀌면 즉시 상태 갱신
+                  _minutes = parsed ?? 0; // 값이 바뀌면 즉시 상태 갱신
+                  if (parsed != null && parsed > 0) {
+                    // 사용자가 시간을 바꾸면 종료 시각도 함께 이동시켜 일관성을 유지한다.
+                    _endAt = _startAt.add(Duration(minutes: parsed));
+                  }
                 });
               },
               validator: (v) {
@@ -448,6 +563,9 @@ class _EditEventState extends ConsumerState<EditEventScreen> {
                 return null;
               },
             ),
+            const SizedBox(height: 12),
+            // 시작/종료 시각을 직관적으로 선택할 수 있는 영역
+            _buildDateTimeRow(context),
             const SizedBox(height: 12),
             // 배터리 변화 입력 (충전/소모 + 자동 계산 및 직접 입력 토글)
             Column(
@@ -730,14 +848,28 @@ class _EditEventState extends ConsumerState<EditEventScreen> {
                         return;
                       }
 
+                      final computedMinutes =
+                          _endAt.difference(_startAt).inMinutes; // 시작/종료 시각으로 계산된 실제 소요 시간
+                      final safeMinutes = computedMinutes > 0
+                          ? computedMinutes
+                          : (_minutes > 0 ? _minutes : 0); // 혹시 모를 불일치를 대비한 보정
+                      if (safeMinutes <= 0) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('시작과 종료 시각을 다시 확인해주세요.')), // 최소 1분 이상 필요
+                        );
+                        return;
+                      }
+
+                      _minutes = safeMinutes; // 배터리 계산에 사용하는 분 값도 최신으로 맞춘다.
+                      _endAt = _startAt.add(Duration(minutes: safeMinutes)); // 종료 시각을 일관되게 맞춘다.
+
                       setState(() => _saving = true); // 저장 중임을 표시
                       final now = DateTime.now();
-                      final minutes = _minutes > 0 ? _minutes : 0; // 혹시 모를 음수 입력 방어
-                      final start = widget.event?.startAt ?? now; // 기존 일정이면 시작 시각 유지
-                      final end = start.add(Duration(minutes: minutes)); // 종료 시각 계산
+                      final start = _startAt; // 사용자가 선택한 시작 시각을 그대로 저장
+                      final end = _endAt; // 종료 시각도 사용자가 고른 값을 사용
                       final change = _calculateBatteryChange(); // 총 배터리 변화(부호 포함)
-                      final double rate = minutes > 0
-                          ? change / (minutes / 60)
+                      final double rate = _minutes > 0
+                          ? change / (_minutes / 60)
                           : 0.0; // 분 단위를 시간으로 환산해 시간당 변화율 산출
                       final eventId = widget.event?.id ??
                           DateTime.now().microsecondsSinceEpoch.toString();
