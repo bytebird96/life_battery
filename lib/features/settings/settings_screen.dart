@@ -12,6 +12,7 @@ import '../../data/repositories.dart';
 import '../../data/schedule_repository.dart';
 import '../../services/geofence_manager.dart';
 import '../../services/holiday_service.dart';
+import '../../services/notifications.dart';
 import '../schedule/providers.dart';
 
 /// 설정 및 권한 가이드 화면

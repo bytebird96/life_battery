@@ -1,7 +1,7 @@
 name: energy_battery
 description: 로컬 배터리 시뮬레이터
 publish_to: 'none'
-version: 1.0.0+2
+version: 1.0.1+10
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
