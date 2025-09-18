@@ -1,10 +1,10 @@
 import 'dart:async';
-import 'dart:io'; // 플랫폼(OS) 정보를 확인하기 위한 표준 라이브러리
-
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:timezone/data/latest.dart' as tz; // 타임존 데이터 로드
 import 'package:timezone/timezone.dart' as tz; // 일정 시간 계산에 사용
+
+import 'platform/platform_helper.dart'; // 플랫폼 분기 처리를 위한 헬퍼
 
 @pragma('vm:entry-point')
 void notificationTapBackground(NotificationResponse response) {
@@ -118,7 +118,7 @@ class NotificationService {
     );
     var androidScheduleMode = AndroidScheduleMode.exactAllowWhileIdle;
 
-    if (Platform.isAndroid) {
+    if (platformHelper.isAndroid) {
       // Android 단말에서만 정확한 알람 권한을 확인하면 되므로 우선 안드로이드용 플러그인 인스턴스를 가져온다
       final androidPlugin = _plugin
           .resolvePlatformSpecificImplementation<
@@ -169,26 +169,9 @@ class NotificationService {
 
   /// 현재 단말의 안드로이드 SDK 버전을 반환한다. (다른 플랫폼은 null)
   Future<int?> _getAndroidSdkInt() async {
-    if (!Platform.isAndroid) {
-      return null; // Android가 아니라면 SDK 버전이 의미가 없으므로 null 처리
-    }
-
-    final versionString = Platform.operatingSystemVersion;
-
-    // 대표적인 문자열 예시: "Android 13 (API 33)"
-    final apiMatch =
-        RegExp('API(?:\\s+Level)?\\s*(\\d+)').firstMatch(versionString);
-    if (apiMatch != null) {
-      return int.tryParse(apiMatch.group(1)!); // 정규식에서 추출한 숫자를 정수로 변환
-    }
-
-    // 제조사에 따라 "SDK 33"과 같은 표현을 쓰기도 하므로 보조 정규식을 한 번 더 확인
-    final sdkMatch = RegExp('SDK\\s*(\\d+)').firstMatch(versionString);
-    if (sdkMatch != null) {
-      return int.tryParse(sdkMatch.group(1)!);
-    }
-
-    return null; // 어떤 패턴에도 맞지 않으면 null 반환하여 상위 로직에서 안전하게 처리
+    // 플랫폼 헬퍼가 알아서 안드로이드 여부와 SDK 버전을 판단한다.
+    // 웹이나 다른 플랫폼에서는 null이 반환되므로 호출부에서 안전하게 처리 가능하다.
+    return platformHelper.getAndroidSdkInt();
   }
 
   /// 예약된 알림 취소
