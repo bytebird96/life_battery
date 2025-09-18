@@ -87,7 +87,12 @@ class NotificationService {
   Future<void> showLowBattery() async {
     // 플랫폼별 알림 상세 설정
     const android = AndroidNotificationDetails('low', '낮은 배터리');
-    const darwin = DarwinNotificationDetails();
+    // iOS/macOS에서 포그라운드 상태여도 배너/소리/뱃지가 표시되도록 명시적으로 true 지정
+    const darwin = DarwinNotificationDetails(
+      presentAlert: true, // 화면 상단에 배너 표시 허용
+      presentSound: true, // 알림 사운드 재생 허용
+      presentBadge: true, // 앱 아이콘 뱃지 갱신 허용
+    );
     const details = NotificationDetails(
       android: android,
       iOS: darwin,
@@ -110,7 +115,12 @@ class NotificationService {
   }) async {
     final scheduled = tz.TZDateTime.now(tz.local).add(after); // 현재 시각 기준 예약
     const android = AndroidNotificationDetails('done', '일정 완료');
-    const darwin = DarwinNotificationDetails();
+    // iOS/macOS에서도 예약 알림이 포그라운드에서 정상적으로 울리도록 옵션 명시
+    const darwin = DarwinNotificationDetails(
+      presentAlert: true, // 배너를 반드시 노출
+      presentSound: true, // 사운드를 재생하여 사용자가 인지하기 쉽게 함
+      presentBadge: true, // 완료 알림 시 아이콘 뱃지를 갱신할 수 있게 허용
+    );
     const details = NotificationDetails(
       android: android,
       iOS: darwin,
@@ -191,7 +201,12 @@ class NotificationService {
       importance: Importance.max,
       priority: Priority.high,
     );
-    const darwin = DarwinNotificationDetails();
+    // 위치 기반 즉시 알림도 포그라운드에서 배너/사운드가 나오도록 동일하게 설정
+    const darwin = DarwinNotificationDetails(
+      presentAlert: true, // 배너를 표시하여 사용자가 즉시 확인할 수 있도록 함
+      presentSound: true, // 사운드를 통해 인지를 돕는다
+      presentBadge: true, // 아이콘 뱃지 업데이트 허용
+    );
     const details = NotificationDetails(android: android, iOS: darwin, macOS: darwin);
     await _plugin.show(
       scheduleId.hashCode,
