@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/date_symbol_data_local.dart';
 
 import 'core/compute.dart';
 import 'data/models.dart';
@@ -24,6 +25,9 @@ import 'data/schedule_models.dart'; // Schedule 타입 참조 시 필요
 /// 앱 시작점
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // ▼ intl 패키지에서 제공하는 날짜/시간 포맷 정보를 로드한다.
+  //    한국어(ko_KR) 로케일 데이터를 사전에 초기화해야 DateFormat 사용 시 오류가 발생하지 않는다.
+  await initializeDateFormatting('ko_KR', null);
   final repo = AppRepository();
   await repo.init();
 
