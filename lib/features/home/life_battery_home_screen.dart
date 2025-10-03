@@ -713,6 +713,11 @@ class _LifeBatteryHomeScreenState extends ConsumerState<LifeBatteryHomeScreen> {
                     // 재확인해 "실행 중" 배지가 올바르게 표시되도록 한다.
                     await _loadState();
                   },
+                  onReport: () {
+                    // 우측 하단 파이차트 버튼을 누르면 새롭게 구성한 리포트 화면을 연다.
+                    // 간단한 통계와 그래프를 제공해 배터리 흐름을 한눈에 파악할 수 있도록 했다.
+                    context.push('/report');
+                  },
                 ),
               ),
             ),

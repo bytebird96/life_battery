@@ -15,6 +15,7 @@ import 'features/schedule/schedule_home_screen.dart';
 import 'features/settings/settings_screen.dart';
 import 'features/task/task_screen.dart';
 import 'features/home/event_list_screen.dart';
+import 'features/report/report_screen.dart';
 import 'services/geofence_manager.dart';
 import 'services/holiday_service.dart';
 import 'services/notifications.dart';
@@ -90,6 +91,15 @@ final routerProvider = Provider<GoRouter>((ref) {
           //    기존 Navigator.pushNamed('/tasks') 호출과 동일한 목적이지만,
           //    GoRouter를 사용해 라우팅을 일관되게 관리한다.
           return const TaskScreen();
+        },
+      ),
+      GoRoute(
+        path: '/report',
+        name: 'report',
+        builder: (context, state) {
+          // ▼ 우측 하단 파이차트 아이콘을 눌렀을 때 사용할 배터리 리포트 화면.
+          //    그래프와 요약 통계를 함께 제공해 배터리 흐름을 쉽게 이해할 수 있도록 구성했다.
+          return const ReportScreen();
         },
       ),
       GoRoute(
