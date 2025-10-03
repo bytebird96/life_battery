@@ -306,7 +306,10 @@ class _TenDayReportView extends StatelessWidget {
               ? const Color(0xFF27AE60)
               : const Color(0xFFEB5757);
           final increaseText = stat.delta >= 0 ? '증가' : '감소';
-          final percentRange = maxRange == 0 ? 0 : stat.max / maxRange;
+          // 최대 배터리 값과 비교해 현재 값이 어느 정도 비율인지 계산한다.
+          final percentRange = maxRange == 0 ? 0.0 : stat.max / maxRange;
+          // LinearProgressIndicator는 0~1 사이의 값만 허용하므로 안전하게 잘라준다.
+          final clampedPercent = percentRange.clamp(0.0, 1.0).toDouble();
           return Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Column(
@@ -329,7 +332,7 @@ class _TenDayReportView extends StatelessWidget {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(12),
                   child: LinearProgressIndicator(
-                    value: percentRange.clamp(0.0, 1.0),
+                    value: clampedPercent,
                     minHeight: 10,
                     backgroundColor: Colors.grey[200],
                     valueColor: AlwaysStoppedAnimation<Color>(
