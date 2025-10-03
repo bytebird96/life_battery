@@ -12,7 +12,15 @@ class LifeTabBar extends StatelessWidget {
   /// 왼쪽 시계 아이콘을 눌렀을 때 실행할 함수
   final VoidCallback onClock;
 
-  const LifeTabBar({super.key, required this.onAdd, required this.onClock});
+  /// 오른쪽 파이차트 아이콘을 눌렀을 때 실행할 함수
+  final VoidCallback onReport;
+
+  const LifeTabBar({
+    super.key,
+    required this.onAdd,
+    required this.onClock,
+    required this.onReport,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -42,9 +50,7 @@ class LifeTabBar extends StatelessWidget {
               opacity: 0.4,
               child: IconButton(
                 icon: const Icon(Icons.pie_chart_outline, size: 28),
-                onPressed: () {
-                  // 추후 기능 추가 예정
-                },
+                onPressed: onReport, // 우측 아이콘을 누르면 리포트 화면으로 이동
               ),
             ),
           ),
