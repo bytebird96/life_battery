@@ -128,7 +128,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
             if (context.canPop()) {
               context.pop();
             } else {
-              context.go('/');
+              // ▼ 홈 경로가 '/home'으로 이동했으므로, 루트('/') 대신 새 경로를 사용한다.
+              //    스플래시 화면을 다시 보지 않게 하고 바로 홈으로 돌아가도록 돕는다.
+              context.go('/home');
             }
           },
         ),

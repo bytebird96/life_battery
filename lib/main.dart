@@ -17,6 +17,7 @@ import 'features/settings/settings_screen.dart';
 import 'features/task/task_screen.dart';
 import 'features/home/event_list_screen.dart';
 import 'features/report/report_screen.dart';
+import 'features/splash/splash_screen.dart';
 import 'services/geofence_manager.dart';
 import 'services/holiday_service.dart';
 import 'services/notifications.dart';
@@ -76,14 +77,25 @@ void main() async {
 
 final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
+    // ▼ initialLocation을 '/'로 유지하면, 앱이 켜졌을 때 가장 먼저 스플래시 화면이 보인다.
+    //    이후 스플래시에서 context.go('/home')을 호출해 실제 홈 화면으로 이동하도록 구성했다.
+    initialLocation: '/',
     routes: [
       GoRoute(
         path: '/',
+        name: 'splash',
+        builder: (context, state) {
+          // ▼ '/' 경로는 이제 스플래시 화면을 담당한다.
+          //    앱 실행 직후 1초 동안 로고를 보여준 뒤 '/home'으로 이동하도록 구성했다.
+          return const SplashScreen();
+        },
+      ),
+      GoRoute(
+        path: '/home',
         name: 'home',
         builder: (context, state) {
-          // ▼ 초보자도 이해하기 쉽게: 앱을 켰을 때 가장 먼저 보이는 화면을 지정한다.
-          //    기존에는 일정 홈(ScheduleHomeScreen)으로 이동했지만,
-          //    요청에 따라 라이프 배터리 홈(LifeBatteryHomeScreen)을 기본 화면으로 교체했다.
+          // ▼ 실제 홈 UI는 '/home' 경로에 배치했다.
+          //    스플래시에서 context.go('/home')으로 이동하므로, 사용자는 자연스럽게 홈을 보게 된다.
           return const LifeBatteryHomeScreen();
         },
       ),

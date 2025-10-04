@@ -36,7 +36,9 @@ class ScheduleDetailScreen extends ConsumerWidget {
             if (context.canPop()) {
               context.pop();
             } else {
-              context.go('/');
+              // ▼ 홈 경로가 '/home'으로 바뀌었으므로, 뒤로가기 실패 시 새 경로로 안내한다.
+              //    이렇게 하면 스플래시('/')를 거치지 않고 바로 실제 홈 화면으로 돌아간다.
+              context.go('/home');
             }
           },
         ),
@@ -139,7 +141,9 @@ class ScheduleDetailScreen extends ConsumerWidget {
       if (context.canPop()) {
         context.pop();
       } else {
-        context.go('/');
+        // ▼ 삭제 후에도 이전 화면이 없으면 '/home'으로 이동해 사용자가 길을 잃지 않도록 한다.
+        //    스플래시용 '/' 경로로 보내면 다시 로고를 보게 되므로 새 홈 경로를 사용한다.
+        context.go('/home');
       }
     }
   }

@@ -101,7 +101,9 @@ class _ScheduleEditScreenState extends ConsumerState<ScheduleEditScreen> {
             if (context.canPop()) {
               context.pop();
             } else {
-              context.go('/');
+              // ▼ 스플래시 도입으로 실제 홈 화면 경로가 '/home'으로 변경되었다.
+              //    루트('/')는 스플래시가 차지하므로, 홈으로 돌아가려면 '/home'을 호출해야 한다.
+              context.go('/home');
             }
           },
         ),
@@ -419,7 +421,9 @@ class _ScheduleEditScreenState extends ConsumerState<ScheduleEditScreen> {
     if (context.canPop()) {
       context.pop();
     } else {
-      context.go('/');
+      // ▼ 저장 후 사용자를 다시 홈으로 돌려보낼 때도 새 경로 '/home'을 사용한다.
+      //    이렇게 해두면 스플래시 화면을 다시 보지 않고 곧바로 홈으로 복귀한다.
+      context.go('/home');
     }
   }
 }
